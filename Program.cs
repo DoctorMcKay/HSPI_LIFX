@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Threading;
 
 namespace HSPI_LIFX
 {
@@ -10,6 +11,16 @@ namespace HSPI_LIFX
 		public static void Main(string[] args) {
 			string serverAddress = DEFAULT_SERVER_ADDRESS;
 			int serverPort = DEFAULT_SERVER_PORT;
+
+			//doLifxThing();
+			var client = new LifxClient();
+			client.DiscoverDevices();
+			
+			while (true) {
+				Thread.Sleep(250);
+			}
+
+			/*
 			
 			foreach (string arg in args) {
 				string[] parts = arg.Split('=');
@@ -51,7 +62,7 @@ namespace HSPI_LIFX
 			}
 			catch (Exception ex) {
 				Console.WriteLine("Unhandled exception: " + ex.Message);
-			}
+			}*/
 		}
 	}
 }

@@ -52,6 +52,11 @@
   <ItemGroup>
     <Compile Include="Debug.cs" />
     <Compile Include="HspiBase.cs" />
+    <Compile Include="Lifx\LifxClient.cs" />
+    <Compile Include="Lifx\LifxDevice.cs" />
+    <Compile Include="Lifx\LifxDeviceDiscoveredEventArgs.cs" />
+    <Compile Include="Lifx\LifxFrame.cs" />
+    <Compile Include="Lifx\LifxMessageType.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
