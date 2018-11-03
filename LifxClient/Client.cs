@@ -14,13 +14,13 @@ namespace LifxClient
 		public event EventHandler<DeviceEventArgs> DeviceDiscovered;
 		public event EventHandler<DeviceEventArgs> DeviceLost;
 		
-		private UdpClient sock;
-		private Dictionary<uint, Frame> responses;
+		private readonly UdpClient sock;
+		private readonly Dictionary<RequestId, Frame> responses;
+		private readonly Dictionary<ulong, Device> devices;
+		private readonly Dictionary<ulong, byte> countDevicesNotSeen;
 		private uint sourceId = 0;
 		private byte seq = 0;
-		private Dictionary<ulong, Device> devices;
-		private Dictionary<ulong, byte> countDevicesNotSeen;
-		
+
 		private const ushort BROADCAST_PORT = 56700;
 
 		public Client() {
@@ -29,9 +29,12 @@ namespace LifxClient
 			};
 			Debug.WriteLine("LifxClient UDP socket listening on port " + ((IPEndPoint) sock.Client.LocalEndPoint).Port);
 
-			responses = new Dictionary<uint, Frame>();
+			responses = new Dictionary<RequestId, Frame>();
 			devices = new Dictionary<ulong, Device>();
 			countDevicesNotSeen = new Dictionary<ulong, byte>();
+			
+			// Initialize with a random source ID
+			sourceId = (uint) new Random().Next(0, int.MaxValue);
 			
 			receiveUdpPacket();
 		}
@@ -47,19 +50,22 @@ namespace LifxClient
 
 		internal async Task<Frame> sendPacketWithResponse(IPEndPoint address, Frame frame) {
 			sendPacket(address, frame);
-			var source = frame.Source;
+			RequestId reqId = new RequestId {
+				SourceID = frame.Source,
+				Sequence = frame.Sequence,
+			};
 
 			var attempts = 0;
-			while (!responses.ContainsKey(source) && ++attempts < 100) {
+			while (!responses.ContainsKey(reqId) && ++attempts < 100) {
 				await Task.Delay(100);				
 			}
 
 			Frame respFrame;
-			if (!responses.TryGetValue(source, out respFrame)) {
+			if (!responses.TryGetValue(reqId, out respFrame)) {
 				throw new Exception("Timed out waiting for response");
 			}
 
-			responses.Remove(source); // clean up after ourselves
+			responses.Remove(reqId); // clean up after ourselves
 			return respFrame;
 		}
 
@@ -67,30 +73,30 @@ namespace LifxClient
 			Debug.WriteLine("Sending packet of " + frame.Size + " bytes to " + address.Address + ":" + address.Port);
 			frame.Source = ++sourceId;
 			frame.Sequence = ++seq;
-			Debug.WriteLine(Helpers.ByteArrayToHexString(frame.Serialize()));
 			sock.SendAsync(frame.Serialize(), frame.Size, address);
 		}
 
 		private async void receiveUdpPacket() {
 			var data = await sock.ReceiveAsync();
 			Debug.WriteLine("Received UDP packet of length " + data.Buffer.Length + " from " + data.RemoteEndPoint.Address + ":" + data.RemoteEndPoint.Port);
-
-			var hex = new StringBuilder(data.Buffer.Length * 2);
-			foreach (byte b in data.Buffer) {
-				hex.AppendFormat("{0:x2}", b);
-			}
 			
-			Debug.WriteLine(hex.ToString());
 			try {
 				var frame = Frame.Unserialize(data.Buffer);
-				Debug.WriteLine("Got packet type " + frame.Type);
+				Debug.WriteLine("Got packet with Type = " + frame.Type + "; Source = " + frame.Source + "; Sequence = " + frame.Sequence);
 
-				if (!responses.ContainsKey(frame.Source)) {
-					responses.Add(frame.Source, frame);
+				RequestId reqId = new RequestId {
+					SourceID = frame.Source,
+					Sequence = frame.Sequence,
+				};
+
+				if (!responses.ContainsKey(reqId)) {
+					responses.Add(reqId, frame);
+#pragma warning disable 4014
 					Task.Run(async () => {
+#pragma warning restore 4014
 						await Task.Delay(10000);
-						if (responses.ContainsKey(frame.Source)) {
-							responses.Remove(frame.Source);
+						if (responses.ContainsKey(reqId)) {
+							responses.Remove(reqId);
 						}
 					});
 				}
@@ -149,12 +155,43 @@ namespace LifxClient
 					break;
 				
 				default:
-					Debug.WriteLine("Unhandled frame " + frame.Type);
+					//Debug.WriteLine("Unhandled frame " + frame.Type);
 					break;
 			}
 			
 			reader.Dispose();
 			stream.Dispose();
+		}
+	}
+
+	internal class RequestId : IEquatable<RequestId>
+	{
+		public uint SourceID { get; set; }
+		public byte Sequence { get; set; }
+
+		public override int GetHashCode() {
+			byte hi = (byte) ((SourceID >> 24) & 0xff);
+			byte medHi = (byte) ((SourceID >> 16) & 0xff);
+			byte medLo = (byte) ((SourceID >> 8) & 0xff);
+			byte lo = (byte) (SourceID & 0xff);
+
+			hi ^= Sequence;
+			medHi ^= Sequence;
+			medLo ^= Sequence;
+			lo ^= Sequence;
+
+			return (hi << 24) |
+			       (medHi << 16) |
+			       (medLo << 8) |
+			       lo;
+		}
+
+		public override bool Equals(object other) {
+			return Equals(other as RequestId);
+		}
+
+		public bool Equals(RequestId other) {
+			return SourceID == other.SourceID && Sequence == other.Sequence;
 		}
 	}
 	
