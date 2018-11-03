@@ -62,6 +62,7 @@ namespace LifxClient
 		/// <summary> Start auto-discovery of LIFX devices. </summary>
 		public void StartDiscovery() {
 			discoveryTimer.Enabled = true;
+			discoverDevices();
 		}
 
 		/// <summary> Stop auto-discovery of LIFX devices. </summary>
@@ -137,7 +138,7 @@ namespace LifxClient
 		}
 
 		internal void sendPacket(IPEndPoint address, Frame frame) {
-			Debug.WriteLine("Sending packet of " + frame.Size + " bytes to " + address.Address + ":" + address.Port);
+			//Debug.WriteLine("Sending packet of " + frame.Size + " bytes to " + address.Address + ":" + address.Port);
 			frame.Source = sourceId++;
 			frame.Sequence = seq++;
 			sock.SendAsync(frame.Serialize(), frame.Size, address);
@@ -145,11 +146,11 @@ namespace LifxClient
 
 		private async void receiveUdpPacket() {
 			var data = await sock.ReceiveAsync();
-			Debug.WriteLine("Received UDP packet of length " + data.Buffer.Length + " from " + data.RemoteEndPoint.Address + ":" + data.RemoteEndPoint.Port);
+			//Debug.WriteLine("Received UDP packet of length " + data.Buffer.Length + " from " + data.RemoteEndPoint.Address + ":" + data.RemoteEndPoint.Port);
 			
 			try {
 				var frame = Frame.Unserialize(data.Buffer);
-				Debug.WriteLine("Got packet with Type = " + frame.Type + "; Source = " + frame.Source + "; Sequence = " + frame.Sequence);
+				Debug.WriteLine("Got packet from " + data.RemoteEndPoint.Address + " with Type = " + frame.Type + "; Source = " + frame.Source + "; Sequence = " + frame.Sequence);
 
 				RequestId reqId = new RequestId {
 					SourceID = frame.Source,
@@ -185,12 +186,12 @@ namespace LifxClient
 				case MessageType.StateService:
 					var service = reader.ReadByte();
 					var port = reader.ReadUInt32();
-					Debug.WriteLine("Got service " + service + " on port " + port + " from " + remote + " address " + frame.Target.ToString("X"));
+					//Debug.WriteLine("Got service " + service + " on port " + port + " from " + remote + " address " + frame.Target.ToString("X"));
 					if (service == 1) {
 						// UDP
 						Device device;
 						if (devices.TryGetValue(frame.Target, out device)) {
-							Debug.WriteLine("Address " + frame.Target + " is already known; not querying");
+							Debug.WriteLine("Address " + frame.Target.ToString("X") + " is already known; not querying");
 							device.CheckedIn = true;
 							
 							// Make sure the IP address hasn't changed
