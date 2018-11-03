@@ -18,6 +18,32 @@ namespace LifxClient
 			this.client = client;
 		}
 
+		public async Task<DeviceVersion> GetVersion() {
+			var resp = await client.sendPacketWithResponse(IPAddress, new Frame {
+				Payload = new byte[] { },
+				Target = Address,
+				Type = MessageType.GetVersion
+			});
+
+			if (resp.Type != MessageType.StateVersion) {
+				Debug.WriteLine("Unexpected response type " + resp.Type + " to GetVersion");
+				return null;
+			}
+			
+			var stream = new MemoryStream(resp.Payload);
+			var reader = new BinaryReader(stream);
+
+			var version = new DeviceVersion {
+				Vendor = reader.ReadUInt32(),
+				Product = reader.ReadUInt32(),
+				Version = reader.ReadUInt32()
+			};
+			
+			reader.Dispose();
+			stream.Dispose();
+			return version;
+		}
+
 		/// <summary> Query this device's light status. </summary>
 		/// <returns>LightStatus</returns>
 		public async Task<LightStatus> QueryLightStatus() {
@@ -159,6 +185,17 @@ namespace LifxClient
 				Powered = power > 0,
 				Label = label,
 			};
+		}
+	}
+
+	public class DeviceVersion
+	{
+		public uint Vendor { get; internal set; }
+		public uint Product { get; internal set; }
+		public uint Version { get; internal set; }
+
+		public override string ToString() {
+			return "Vendor = " + Vendor + "; Product = " + Product + "; Version = " + Version;
 		}
 	}
 
