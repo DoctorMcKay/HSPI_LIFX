@@ -5,18 +5,35 @@ using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading.Tasks;
+using System.Timers;
 
 namespace LifxClient
 {
 	public class Client
 	{
+		/// <summary> How frequently should we try to discover devices? In milliseconds. </summary>
+		public ushort DiscoveryFrequency {
+			get { return _discoveryFrequency; }
+			set {
+				if (value < 2500) {
+					throw new Exception("Cannot set DiscoveryFrequency less than 2500 ms");
+				}
+				
+				_discoveryFrequency = value;
+				discoveryTimer.Interval = value;
+			}
+		}
+		
+		/// <summary> Fired when a new device is discovered. </summary>
 		public event EventHandler<DeviceEventArgs> DeviceDiscovered;
+		/// <summary> Fired when a device is lost. </summary>
 		public event EventHandler<DeviceEventArgs> DeviceLost;
 		
 		private readonly UdpClient sock;
 		private readonly Dictionary<RequestId, Frame> responses;
 		private readonly Dictionary<ulong, Device> devices;
-		private readonly Dictionary<ulong, byte> countDevicesNotSeen;
+		private readonly Timer discoveryTimer;
+		private ushort _discoveryFrequency = 10000;
 		private uint sourceId = 0;
 		private byte seq = 0;
 
@@ -26,11 +43,15 @@ namespace LifxClient
 			sock = new UdpClient(0) {
 				EnableBroadcast = true
 			};
-			Debug.WriteLine("LifxClient UDP socket listening on port " + ((IPEndPoint) sock.Client.LocalEndPoint).Port);
+			Debug.WriteLine("Client UDP socket listening on port " + ((IPEndPoint) sock.Client.LocalEndPoint).Port);
 
 			responses = new Dictionary<RequestId, Frame>();
 			devices = new Dictionary<ulong, Device>();
-			countDevicesNotSeen = new Dictionary<ulong, byte>();
+			
+			discoveryTimer = new Timer(DiscoveryFrequency);
+			discoveryTimer.Elapsed += (object source, ElapsedEventArgs e) => { discoverDevices(); };
+			discoveryTimer.AutoReset = true;
+			discoveryTimer.Enabled = false;
 			
 			// Initialize with a random source ID
 			sourceId = (uint) new Random().Next(0, int.MaxValue);
@@ -38,14 +59,60 @@ namespace LifxClient
 			receiveUdpPacket();
 		}
 
-		public void DiscoverDevices() {
+		/// <summary> Start auto-discovery of LIFX devices. </summary>
+		public void StartDiscovery() {
+			discoveryTimer.Enabled = true;
+		}
+
+		/// <summary> Stop auto-discovery of LIFX devices. </summary>
+		public void StopDiscovery() {
+			discoveryTimer.Enabled = false;
+		}
+
+		/// <summary> Get all known devices. </summary>
+		/// <returns>List<Device></returns>
+		public List<Device> GetKnownDevices() {
+			var output = new List<Device>();
+			foreach (Device device in devices.Values) {
+				output.Add(device);
+			}
+
+			return output;
+		}
+
+		/// <summary> Get a device by its address. </summary>
+		/// <param name="address">The device's address</param>
+		/// <returns>Device, or null if not known</returns>
+		public Device GetDeviceByAddress(ulong address) {
+			Device output;
+			if (!devices.TryGetValue(address, out output)) {
+				return null;
+			}
+
+			return output;
+		}
+
+		private void discoverDevices() {
+			var allDevices = devices.Values;
+			foreach (Device dev in allDevices) {
+				dev.CheckedIn = false;
+			}
+			
 			foreach (IPAddress broadcastAddress in Helpers.GetBroadcastAddresses()) {
-				// TODO make this automatic, and handle missing devices
 				sendPacket(new IPEndPoint(broadcastAddress, BROADCAST_PORT), new Frame {
 					Type = MessageType.GetService,
 					Payload = new byte[] { }
 				});
 			}
+
+			Task.Run(async () => {
+				await Task.Delay(2000);
+				foreach (Device dev in allDevices) {
+					if (!dev.CheckedIn && ++dev.MissedCheckins >= 5) {
+						removeFailedDevice(dev);
+					}
+				}
+			});
 		}
 
 		internal async Task<Frame> sendPacketWithResponse(IPEndPoint address, Frame frame) {
@@ -71,8 +138,8 @@ namespace LifxClient
 
 		internal void sendPacket(IPEndPoint address, Frame frame) {
 			Debug.WriteLine("Sending packet of " + frame.Size + " bytes to " + address.Address + ":" + address.Port);
-			frame.Source = ++sourceId;
-			frame.Sequence = ++seq;
+			frame.Source = sourceId++;
+			frame.Sequence = seq++;
 			sock.SendAsync(frame.Serialize(), frame.Size, address);
 		}
 
@@ -124,6 +191,8 @@ namespace LifxClient
 						Device device;
 						if (devices.TryGetValue(frame.Target, out device)) {
 							Debug.WriteLine("Address " + frame.Target + " is already known; not querying");
+							device.CheckedIn = true;
+							
 							// Make sure the IP address hasn't changed
 							if (!device.IPAddress.Equals(remote)) {
 								device.IPAddress = remote;
@@ -135,6 +204,7 @@ namespace LifxClient
 						device = new Device(this) {
 							Address = frame.Target,
 							IPAddress = remote,
+							CheckedIn = true,
 						};
 						
 						device.QueryLightStatus().ContinueWith((Task<LightStatus> task) => {
@@ -161,6 +231,17 @@ namespace LifxClient
 			
 			reader.Dispose();
 			stream.Dispose();
+		}
+
+		private void removeFailedDevice(Device dev) {
+			if (devices.ContainsKey(dev.Address)) {
+				devices.Remove(dev.Address);
+			}
+
+			var handler = DeviceLost;
+			if (handler != null) {
+				handler(this, new DeviceEventArgs(dev));
+			}
 		}
 	}
 

@@ -11,6 +11,9 @@ namespace LifxClient
 		public ulong Address { get; set; }
 		public IPEndPoint IPAddress { get; set; }
 		public LightStatus LastKnownStatus { get; private set; }
+		
+		internal bool CheckedIn { get; set; }
+		internal byte MissedCheckins { get; set; }
 
 		private readonly Client client;
 
