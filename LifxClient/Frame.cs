@@ -1,9 +1,10 @@
+using LifxClient.Enums;
 using System;
 using System.IO;
 
-namespace HSPI_LIFX
+namespace LifxClient
 {
-	public class LifxFrame
+	public class Frame
 	{
 		public ushort Size {
 			get { return getSize(); }
@@ -15,7 +16,7 @@ namespace HSPI_LIFX
 		public bool AckRequired { get; set; }
 		public bool ResponseRequired { get; set; }
 		public byte Sequence { get; set; }
-		public LifxMessageType Type { get; set; }
+		public MessageType Type { get; set; }
 		public byte[] Payload { get; set; }
 
 		private const ushort HEADER_LENGTH_BYTES = 8 + 16 + 12;
@@ -60,7 +61,7 @@ namespace HSPI_LIFX
 			return packet;
 		}
 
-		public static LifxFrame Unserialize(byte[] serialized) {
+		public static Frame Unserialize(byte[] serialized) {
 			var stream = new MemoryStream(serialized);
 			var reader = new BinaryReader(stream);
 
@@ -80,7 +81,7 @@ namespace HSPI_LIFX
 				throw new Exception("Packet reported size of " + size + "but it's actually " + serialized.Length);
 			}
 			
-			var frame = new LifxFrame();
+			var frame = new Frame();
 
 			tempShort = reader.ReadUInt16();
 			frame.Tagged = (tempShort & (1 << 13)) == (1 << 13);
@@ -106,7 +107,7 @@ namespace HSPI_LIFX
 			
 			// Protocol header section
 			reader.ReadUInt64(); // reserved
-			frame.Type = (LifxMessageType) reader.ReadUInt16();
+			frame.Type = (MessageType) reader.ReadUInt16();
 			reader.ReadUInt16(); // reserved
 			
 			frame.Payload = reader.ReadBytes(size - HEADER_LENGTH_BYTES);

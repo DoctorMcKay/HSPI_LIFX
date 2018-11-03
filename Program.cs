@@ -13,7 +13,7 @@ namespace HSPI_LIFX
 			int serverPort = DEFAULT_SERVER_PORT;
 
 			//doLifxThing();
-			var client = new LifxClient();
+			var client = new LifxClient.Client();
 			client.DiscoverDevices();
 			
 			while (true) {

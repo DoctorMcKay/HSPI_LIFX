@@ -4,11 +4,11 @@
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
-    <ProjectGuid>{C79C5DB3-AB7B-426B-B2D6-D15D36D76E84}</ProjectGuid>
-    <OutputType>Exe</OutputType>
+    <ProjectGuid>{4C411F9D-73AA-4842-B76F-582D27F09E8F}</ProjectGuid>
+    <OutputType>Library</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>HSPI_LIFX</RootNamespace>
-    <AssemblyName>HSPI_LIFX</AssemblyName>
+    <RootNamespace>LifxClient</RootNamespace>
+    <AssemblyName>LifxClient</AssemblyName>
     <TargetFrameworkVersion>v4.5.2</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
   </PropertyGroup>
@@ -32,40 +32,18 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="HomeSeerAPI, Version=1.0.2.1, Culture=neutral, PublicKeyToken=null">
-      <HintPath>packages\homeseer.1.1.0\lib\net45\HomeSeerAPI.dll</HintPath>
-      <Private>True</Private>
-    </Reference>
-    <Reference Include="HSCF, Version=1.0.0.2, Culture=neutral, PublicKeyToken=null">
-      <HintPath>packages\homeseer.1.1.0\lib\net45\HSCF.dll</HintPath>
-      <Private>True</Private>
-    </Reference>
-    <Reference Include="Scheduler, Version=3.0.0.0, Culture=neutral, PublicKeyToken=null">
-      <HintPath>packages\homeseer.1.1.0\lib\net45\Scheduler.dll</HintPath>
-      <Private>True</Private>
-    </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="System.Data" />
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Client.cs" />
     <Compile Include="Debug.cs" />
-    <Compile Include="HspiBase.cs" />
-    <Compile Include="Program.cs" />
+    <Compile Include="Device.cs" />
+    <Compile Include="Enums\MessageType.cs" />
+    <Compile Include="Frame.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="packages.config" />
-  </ItemGroup>
-  <ItemGroup>
-    <Content Include=".gitignore" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="LifxClient\LifxClient.csproj">
-      <Project>{4c411f9d-73aa-4842-b76f-582d27f09e8f}</Project>
-      <Name>LifxClient</Name>
-    </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 

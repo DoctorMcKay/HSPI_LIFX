@@ -1,3 +1,4 @@
+using LifxClient.Enums;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -6,38 +7,38 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace HSPI_LIFX
+namespace LifxClient
 {
-	public class LifxClient
+	public class Client
 	{
-		public event EventHandler<LifxDeviceDiscoveredEventArgs> DeviceDiscovered;
+		public event EventHandler<DeviceDiscoveredEventArgs> DeviceDiscovered;
 		
 		private UdpClient sock;
-		private Dictionary<uint, LifxFrame> responses;
+		private Dictionary<uint, Frame> responses;
 		private uint sourceId = 0;
 		private byte seq = 0;
 
-		public LifxClient() {
+		public Client() {
 			sock = new UdpClient(0) {
 				EnableBroadcast = true
 			};
 			Debug.WriteLine("LifxClient UDP socket listening on port " + ((IPEndPoint) sock.Client.LocalEndPoint).Port);
 
-			responses = new Dictionary<uint, LifxFrame>();
+			responses = new Dictionary<uint, Frame>();
 			
 			receiveUdpPacket();
 		}
 
 		public void DiscoverDevices() {
 			// TODO go adapter by adapter and send a broadcast to each
-			sendPacket(new IPEndPoint(new IPAddress(new byte[] { 192, 168, 1, 255 }), 56700), new LifxFrame {
+			sendPacket(new IPEndPoint(new IPAddress(new byte[] { 192, 168, 1, 255 }), 56700), new Frame {
 				Tagged = true,
-				Type = LifxMessageType.GetService,
+				Type = MessageType.GetService,
 				Payload = new byte[] {}
 			});
 		}
 
-		private async Task<LifxFrame> sendPacketWithResponse(IPEndPoint address, LifxFrame frame) {
+		private async Task<Frame> sendPacketWithResponse(IPEndPoint address, Frame frame) {
 			sendPacket(address, frame);
 			var source = frame.Source;
 
@@ -46,7 +47,7 @@ namespace HSPI_LIFX
 				await Task.Delay(100);				
 			}
 
-			LifxFrame respFrame;
+			Frame respFrame;
 			if (!responses.TryGetValue(source, out respFrame)) {
 				throw new Exception("Timed out waiting for response");
 			}
@@ -55,7 +56,7 @@ namespace HSPI_LIFX
 			return respFrame;
 		}
 
-		private void sendPacket(IPEndPoint address, LifxFrame frame) {
+		private void sendPacket(IPEndPoint address, Frame frame) {
 			Debug.WriteLine("Sending packet of " + frame.Size + " bytes to " + address.Address.ToString() + ":" + address.Port);
 			frame.Source = ++sourceId;
 			frame.Sequence = ++seq;
@@ -73,7 +74,7 @@ namespace HSPI_LIFX
 			
 			Debug.WriteLine(hex.ToString());*/
 			try {
-				var frame = LifxFrame.Unserialize(data.Buffer);
+				var frame = Frame.Unserialize(data.Buffer);
 				Debug.WriteLine("Got packet type " + frame.Type);
 
 				if (!responses.ContainsKey(frame.Source)) {
@@ -95,12 +96,12 @@ namespace HSPI_LIFX
 			receiveUdpPacket();
 		}
 
-		private void handleFrame(LifxFrame frame, IPEndPoint remote) {
+		private void handleFrame(Frame frame, IPEndPoint remote) {
 			var stream = new MemoryStream(frame.Payload);
 			var reader = new BinaryReader(stream);
 			
 			switch (frame.Type) {
-				case LifxMessageType.StateService:
+				case MessageType.StateService:
 					var service = reader.ReadByte();
 					var port = reader.ReadUInt32();
 					Debug.WriteLine("Got service " + service + " on port " + port + " from " + remote + " address " + frame.Target);
@@ -120,13 +121,13 @@ namespace HSPI_LIFX
 		}
 
 		private async void queryLight(IPEndPoint remote, ulong target) {
-			var resp = await sendPacketWithResponse(remote, new LifxFrame {
+			var resp = await sendPacketWithResponse(remote, new Frame {
 				Payload = new byte[] { },
 				Target = target,
-				Type = LifxMessageType.Light_Get
+				Type = MessageType.Light_Get
 			});
 
-			if (resp.Type != LifxMessageType.Light_State) {
+			if (resp.Type != MessageType.Light_State) {
 				Debug.WriteLine("Unexpected response type " + resp.Type + " to Light_Get");
 				return;
 			}
@@ -143,6 +144,15 @@ namespace HSPI_LIFX
 			var label = System.Text.Encoding.Default.GetString(reader.ReadBytes(32));
 			
 			Debug.WriteLine("Got light data hue = " + hue + ", sat = " + sat + ", bright = " + brightness + ", kel = " + kelvin + ", power = " + power + ", label = " + label);
+		}
+	}
+	
+	public class DeviceDiscoveredEventArgs : EventArgs
+	{
+		public Device Device { get; private set; }
+
+		public DeviceDiscoveredEventArgs(Device dev) {
+			Device = dev;
 		}
 	}
 }

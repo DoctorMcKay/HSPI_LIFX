@@ -1,6 +1,6 @@
-namespace HSPI_LIFX
+namespace LifxClient.Enums
 {
-	public enum LifxMessageType
+	public enum MessageType
 	{
 		GetService = 2,
 		StateService = 3,
