@@ -76,7 +76,6 @@ namespace LifxClient
 			Frame frame = new Frame {
 				Target = Address,
 				Type = MessageType.Light_SetPower,
-				ResponseRequired = true,
 				Payload = stream.ToArray()
 			};
 			

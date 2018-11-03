@@ -1,10 +1,14 @@
 ﻿using System;
+using System.Runtime.CompilerServices;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace HSPI_LIFX
 {
 	public class Program
 	{
+		public static HomeSeerAPI.IHSApplication HsClient;
+		
 		private const string DEFAULT_SERVER_ADDRESS = "127.0.0.1";
 		private const int DEFAULT_SERVER_PORT = 10400;
 
@@ -13,18 +17,10 @@ namespace HSPI_LIFX
 			int serverPort = DEFAULT_SERVER_PORT;
 
 			LifxClient.Debug.LineLogged += (object sender, LifxClient.DebugLineEventArgs eventArgs) => {
-				Debug.WriteLine("[LIFX] " + eventArgs.LogLine);
+				if (!eventArgs.LogLine.Contains("Type = StateService")) {
+					WriteLog("verbose", "[LIFX] " + eventArgs.LogLine, eventArgs.LineNumber, eventArgs.CallerName);
+				}
 			};
-
-			//doLifxThing();
-			var client = new LifxClient.Client();
-			client.DiscoverDevices();
-			
-			while (true) {
-				Thread.Sleep(250);
-			}
-
-			/*
 			
 			foreach (string arg in args) {
 				string[] parts = arg.Split('=');
@@ -66,7 +62,25 @@ namespace HSPI_LIFX
 			}
 			catch (Exception ex) {
 				Console.WriteLine("Unhandled exception: " + ex.Message);
-			}*/
+			}
+		}
+		
+		public static void WriteLog(string type, string message, [CallerLineNumber] int lineNumber = 0, [CallerMemberName] string caller = null) {
+			type = type.ToLower();
+
+			// Don't log Silly type messages to the log unless this is a debug build
+#if DEBUG
+			if (type != "console") {
+				HsClient.WriteLog(type == "silly" ? "LIFX Silly" : "LIFX",
+					type + ": [" + caller + ":" + lineNumber + "] " + message);
+			}
+
+			System.Console.WriteLine("[" + type + "] " + message);
+#else
+			if (type != "verbose" && type != "silly" && type != "console") {
+				HsClient.WriteLog("LIFX", type + ": " + message);
+			}
+#endif
 		}
 	}
 }

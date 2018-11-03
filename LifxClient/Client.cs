@@ -191,7 +191,7 @@ namespace LifxClient
 						// UDP
 						Device device;
 						if (devices.TryGetValue(frame.Target, out device)) {
-							Debug.WriteLine("Address " + frame.Target.ToString("X") + " is already known; not querying");
+							//Debug.WriteLine("Address " + frame.Target.ToString("X") + " is already known; not querying");
 							device.CheckedIn = true;
 							
 							// Make sure the IP address hasn't changed

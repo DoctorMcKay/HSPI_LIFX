@@ -489,10 +489,10 @@ namespace HSPI_LIFX
 		
 		#region Plugin bootstrap
 
-		protected IScsServiceClient<IHSApplication> hsClient;
-		protected IScsServiceClient<IAppCallbackAPI> callbackClient;
-		protected HomeSeerAPI.IHSApplication hs;
-		protected HomeSeerAPI.IAppCallbackAPI callbacks;
+		public IScsServiceClient<IHSApplication> hsClient;
+		public IScsServiceClient<IAppCallbackAPI> callbackClient;
+		public HomeSeerAPI.IHSApplication hs;
+		public HomeSeerAPI.IAppCallbackAPI callbacks;
 
 		public virtual bool Connected {
 			get {
@@ -509,6 +509,7 @@ namespace HSPI_LIFX
 			hsClient.Connect();
 
 			hs = hsClient.ServiceProxy;
+			Program.HsClient = hs;
 			// make sure we're connected successfully
 			double apiVersion = hs.APIVersion;
 
