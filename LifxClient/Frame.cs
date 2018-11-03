@@ -4,13 +4,13 @@ using System.IO;
 
 namespace LifxClient
 {
-	public class Frame
+	internal class Frame
 	{
 		public ushort Size {
 			get { return getSize(); }
 		}
 		
-		public bool Tagged { get; set; }
+		public bool Tagged { get { return Target == 0; } }
 		public uint Source { get; set; }
 		public ulong Target { get; set; }
 		public bool AckRequired { get; set; }
@@ -84,7 +84,7 @@ namespace LifxClient
 			var frame = new Frame();
 
 			tempShort = reader.ReadUInt16();
-			frame.Tagged = (tempShort & (1 << 13)) == (1 << 13);
+			//frame.Tagged = (tempShort & (1 << 13)) == (1 << 13);
 			var protocol = tempShort & 0xfff;
 			if (protocol != 1024) {
 				stream.Dispose();

@@ -43,6 +43,7 @@
     <Compile Include="Device.cs" />
     <Compile Include="Enums\MessageType.cs" />
     <Compile Include="Frame.cs" />
+    <Compile Include="Helpers.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

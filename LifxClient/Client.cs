@@ -11,12 +11,17 @@ namespace LifxClient
 {
 	public class Client
 	{
-		public event EventHandler<DeviceDiscoveredEventArgs> DeviceDiscovered;
+		public event EventHandler<DeviceEventArgs> DeviceDiscovered;
+		public event EventHandler<DeviceEventArgs> DeviceLost;
 		
 		private UdpClient sock;
 		private Dictionary<uint, Frame> responses;
 		private uint sourceId = 0;
 		private byte seq = 0;
+		private Dictionary<ulong, Device> devices;
+		private Dictionary<ulong, byte> countDevicesNotSeen;
+		
+		private const ushort BROADCAST_PORT = 56700;
 
 		public Client() {
 			sock = new UdpClient(0) {
@@ -25,20 +30,22 @@ namespace LifxClient
 			Debug.WriteLine("LifxClient UDP socket listening on port " + ((IPEndPoint) sock.Client.LocalEndPoint).Port);
 
 			responses = new Dictionary<uint, Frame>();
+			devices = new Dictionary<ulong, Device>();
+			countDevicesNotSeen = new Dictionary<ulong, byte>();
 			
 			receiveUdpPacket();
 		}
 
 		public void DiscoverDevices() {
 			// TODO go adapter by adapter and send a broadcast to each
-			sendPacket(new IPEndPoint(new IPAddress(new byte[] { 192, 168, 1, 255 }), 56700), new Frame {
-				Tagged = true,
+			// TODO make this automatic, and handle missing devices
+			sendPacket(new IPEndPoint(new IPAddress(new byte[] { 192, 168, 1, 255 }), BROADCAST_PORT), new Frame {
 				Type = MessageType.GetService,
 				Payload = new byte[] {}
 			});
 		}
 
-		private async Task<Frame> sendPacketWithResponse(IPEndPoint address, Frame frame) {
+		internal async Task<Frame> sendPacketWithResponse(IPEndPoint address, Frame frame) {
 			sendPacket(address, frame);
 			var source = frame.Source;
 
@@ -56,23 +63,24 @@ namespace LifxClient
 			return respFrame;
 		}
 
-		private void sendPacket(IPEndPoint address, Frame frame) {
-			Debug.WriteLine("Sending packet of " + frame.Size + " bytes to " + address.Address.ToString() + ":" + address.Port);
+		internal void sendPacket(IPEndPoint address, Frame frame) {
+			Debug.WriteLine("Sending packet of " + frame.Size + " bytes to " + address.Address + ":" + address.Port);
 			frame.Source = ++sourceId;
 			frame.Sequence = ++seq;
+			Debug.WriteLine(Helpers.ByteArrayToHexString(frame.Serialize()));
 			sock.SendAsync(frame.Serialize(), frame.Size, address);
 		}
 
 		private async void receiveUdpPacket() {
 			var data = await sock.ReceiveAsync();
-			Debug.WriteLine("Received UDP packet of length " + data.Buffer.Length + " from " + data.RemoteEndPoint.Address.ToString() + ":" + data.RemoteEndPoint.Port);
+			Debug.WriteLine("Received UDP packet of length " + data.Buffer.Length + " from " + data.RemoteEndPoint.Address + ":" + data.RemoteEndPoint.Port);
 
-			/*var hex = new StringBuilder(data.Buffer.Length * 2);
+			var hex = new StringBuilder(data.Buffer.Length * 2);
 			foreach (byte b in data.Buffer) {
 				hex.AppendFormat("{0:x2}", b);
 			}
 			
-			Debug.WriteLine(hex.ToString());*/
+			Debug.WriteLine(hex.ToString());
 			try {
 				var frame = Frame.Unserialize(data.Buffer);
 				Debug.WriteLine("Got packet type " + frame.Type);
@@ -104,10 +112,39 @@ namespace LifxClient
 				case MessageType.StateService:
 					var service = reader.ReadByte();
 					var port = reader.ReadUInt32();
-					Debug.WriteLine("Got service " + service + " on port " + port + " from " + remote + " address " + frame.Target);
+					Debug.WriteLine("Got service " + service + " on port " + port + " from " + remote + " address " + frame.Target.ToString("X"));
 					if (service == 1) {
 						// UDP
-						queryLight(remote, frame.Target);
+						Device device;
+						if (devices.TryGetValue(frame.Target, out device)) {
+							Debug.WriteLine("Address " + frame.Target + " is already known; not querying");
+							// Make sure the IP address hasn't changed
+							if (!device.IPAddress.Equals(remote)) {
+								device.IPAddress = remote;
+							}
+							
+							break;
+						}
+						
+						device = new Device(this) {
+							Address = frame.Target,
+							IPAddress = remote,
+						};
+						
+						device.QueryLightStatus().ContinueWith((Task<LightStatus> task) => {
+							if (task.Result == null) {
+								Debug.WriteLine("Unable to get light status for service " + service + " on port " + port + " from " + remote);
+								return;
+							}
+							
+							Debug.WriteLine("Got light status for " + device.Address.ToString("X"));
+							
+							devices.Add(frame.Target, device);
+							var handler = DeviceDiscovered;
+							if (handler != null) {
+								handler(this, new DeviceEventArgs(device));
+							}
+						});
 					}
 					break;
 				
@@ -119,39 +156,13 @@ namespace LifxClient
 			reader.Dispose();
 			stream.Dispose();
 		}
-
-		private async void queryLight(IPEndPoint remote, ulong target) {
-			var resp = await sendPacketWithResponse(remote, new Frame {
-				Payload = new byte[] { },
-				Target = target,
-				Type = MessageType.Light_Get
-			});
-
-			if (resp.Type != MessageType.Light_State) {
-				Debug.WriteLine("Unexpected response type " + resp.Type + " to Light_Get");
-				return;
-			}
-			
-			var stream = new MemoryStream(resp.Payload);
-			var reader = new BinaryReader(stream);
-
-			var hue = reader.ReadUInt16();
-			var sat = reader.ReadUInt16();
-			var brightness = reader.ReadUInt16();
-			var kelvin = reader.ReadUInt16();
-			reader.ReadUInt16(); // reserved
-			var power = reader.ReadUInt16();
-			var label = System.Text.Encoding.Default.GetString(reader.ReadBytes(32));
-			
-			Debug.WriteLine("Got light data hue = " + hue + ", sat = " + sat + ", bright = " + brightness + ", kel = " + kelvin + ", power = " + power + ", label = " + label);
-		}
 	}
 	
-	public class DeviceDiscoveredEventArgs : EventArgs
+	public class DeviceEventArgs : EventArgs
 	{
 		public Device Device { get; private set; }
 
-		public DeviceDiscoveredEventArgs(Device dev) {
+		internal DeviceEventArgs(Device dev) {
 			Device = dev;
 		}
 	}
