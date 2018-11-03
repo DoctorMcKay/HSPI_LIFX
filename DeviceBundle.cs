@@ -20,6 +20,10 @@ namespace HSPI_LIFX
 		}
 
 		public void TryFindChildren() {
+			if (Root == 0) {
+				return;
+			}
+			
 			IHSApplication hs = plugin.hs;
 
 			DeviceClass root = (DeviceClass) hs.GetDeviceByRef(Root);

@@ -337,6 +337,7 @@ for (var i in myqSavedSettings) {
 			if (bundle.IsComplete()) {
 				Program.WriteLog("info", "Complete device bundle found in HS3 for LIFX device " + hs3Addr);
 			} else {
+				Program.WriteLog("info", "Creating HS3 devices for LIFX device " + hs3Addr + " (" + lifxDevice.LastKnownStatus.Label + ")");
 				bundle.CreateDevices(lifxDevice.LastKnownStatus.Label);
 			}
 		}
