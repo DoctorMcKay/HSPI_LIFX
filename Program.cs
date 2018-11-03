@@ -12,6 +12,10 @@ namespace HSPI_LIFX
 			string serverAddress = DEFAULT_SERVER_ADDRESS;
 			int serverPort = DEFAULT_SERVER_PORT;
 
+			LifxClient.Debug.LineLogged += (object sender, LifxClient.DebugLineEventArgs eventArgs) => {
+				Debug.WriteLine("[LIFX] " + eventArgs.LogLine);
+			};
+
 			//doLifxThing();
 			var client = new LifxClient.Client();
 			client.DiscoverDevices();
