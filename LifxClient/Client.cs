@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
-using System.Text;
 using System.Threading.Tasks;
 
 namespace LifxClient
@@ -40,12 +39,13 @@ namespace LifxClient
 		}
 
 		public void DiscoverDevices() {
-			// TODO go adapter by adapter and send a broadcast to each
-			// TODO make this automatic, and handle missing devices
-			sendPacket(new IPEndPoint(new IPAddress(new byte[] { 192, 168, 1, 255 }), BROADCAST_PORT), new Frame {
-				Type = MessageType.GetService,
-				Payload = new byte[] {}
-			});
+			foreach (IPAddress broadcastAddress in Helpers.GetBroadcastAddresses()) {
+				// TODO make this automatic, and handle missing devices
+				sendPacket(new IPEndPoint(broadcastAddress, BROADCAST_PORT), new Frame {
+					Type = MessageType.GetService,
+					Payload = new byte[] { }
+				});
+			}
 		}
 
 		internal async Task<Frame> sendPacketWithResponse(IPEndPoint address, Frame frame) {
