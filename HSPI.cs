@@ -1,7 +1,8 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
+using System.Collections.Specialized;
 using System.Globalization;
+using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Timers;
@@ -15,12 +16,14 @@ namespace HSPI_LIFX
 	public class HSPI : HspiBase
 	{
 		private LifxClient.Client lifxClient;
+		private List<DeviceDescriptor> knownDeviceCache;
 		
 		private const uint TRANSITION_TIME = 1000; // TODO make this configurable
 		
 		public HSPI() {
 			Name = "LIFX";
 			PluginIsFree = true;
+			PluginActionCount = 1;
 		}
 
 		public override string InitIO(string port) {
@@ -143,6 +146,160 @@ namespace HSPI_LIFX
 			}
 		}
 
+		public override string get_ActionName(int actionNumber) {
+			switch (actionNumber) {
+				case 1:
+					return Name + ": Control Device";
+				
+				default:
+					return "UNKNOWN ACTION";
+			}
+		}
+
+		public override string ActionBuildUI(string unique, IPlugInAPI.strTrigActInfo actInfo) {
+			if (actInfo.TANumber != 1) {
+				return "Bad action number " + actInfo.TANumber + "," + actInfo.SubTANumber;
+			}
+			
+			LifxControlActionData data = LifxControlActionData.Unserialize(actInfo.DataIn);
+			StringBuilder builder = new StringBuilder();
+
+			// Action type dropdown
+			clsJQuery.jqDropList actionSelector = new clsJQuery.jqDropList("ActionType" + unique, "events", true);
+			actionSelector.AddItem("(Choose A LIFX Action)", LifxControlActionData.ACTION_UNSELECTED.ToString(),
+				actInfo.SubTANumber == LifxControlActionData.ACTION_UNSELECTED);
+			actionSelector.AddItem("Set Color", LifxControlActionData.ACTION_SET_COLOR.ToString(),
+				actInfo.SubTANumber == LifxControlActionData.ACTION_SET_COLOR);
+			actionSelector.AddItem("Set Transition Time", LifxControlActionData.ACTION_SET_TRANSITION_TIME.ToString(),
+				actInfo.SubTANumber == LifxControlActionData.ACTION_SET_TRANSITION_TIME);
+			builder.Append(actionSelector.Build());
+
+			// Device selector dropdown
+			if (actInfo.SubTANumber != LifxControlActionData.ACTION_UNSELECTED) {
+				clsJQuery.jqDropList deviceSelector = new clsJQuery.jqDropList("Device" + unique, "events", true);
+				deviceSelector.AddItem("(Choose A Device)", "0", data.DevRef == 0);
+				foreach (DeviceDescriptor device in getKnownDevices()) {
+					deviceSelector.AddItem(device.DevName, device.DevRef.ToString(), data.DevRef == device.DevRef);
+				}
+
+				builder.Append(deviceSelector.Build());
+			}
+
+			if (data.DevRef != 0) {
+				switch (actInfo.SubTANumber) {
+					case LifxControlActionData.ACTION_UNSELECTED:
+						break;
+
+					case LifxControlActionData.ACTION_SET_COLOR:
+						string chosenColor = "ffffff";
+						if (!string.IsNullOrEmpty(data.StringValue)) {
+							chosenColor = data.StringValue;
+						}
+
+						clsJQuery.jqColorPicker colorPicker =
+							new clsJQuery.jqColorPicker("StringValue" + unique, "events", 6, chosenColor);
+						builder.Append(colorPicker.Build());
+
+						// This is necessary to work around a HS3 bug that doesn't submit the color picker properly
+						clsJQuery.jqButton colorSaveBtn =
+							new clsJQuery.jqButton("SaveBtn", "Save Color", "events", true);
+						colorSaveBtn.submitForm = true;
+						builder.Append(colorSaveBtn.Build());
+						builder.Append("<br />Due to an HS3 bug, you must press Save Color to save this event.");
+						break;
+
+					case LifxControlActionData.ACTION_SET_TRANSITION_TIME:
+						clsJQuery.jqTimeSpanPicker timePicker =
+							new clsJQuery.jqTimeSpanPicker("StringValue" + unique, "Transition Time", "events",
+								true);
+						double timeInterval;
+						timePicker.showDays = false;
+						timePicker.defaultTimeSpan = TimeSpan.FromSeconds(double.TryParse(data.StringValue, out timeInterval) ? timeInterval : 1);
+						builder.Append(timePicker.Build());
+						break;
+
+					default:
+						builder.Append("Unknown action type " + actInfo.SubTANumber);
+						break;
+				}
+			}
+
+			return builder.ToString();
+		}
+
+		public override IPlugInAPI.strMultiReturn ActionProcessPostUI(NameValueCollection postData,
+			IPlugInAPI.strTrigActInfo actInfo) {
+
+			if (actInfo.TANumber != 1) {
+				throw new Exception("Unknown action number " + actInfo.TANumber);
+			}
+			
+			IPlugInAPI.strMultiReturn output = new IPlugInAPI.strMultiReturn();
+			output.TrigActInfo.TANumber = actInfo.TANumber;
+			output.TrigActInfo.SubTANumber = actInfo.SubTANumber;
+			output.DataOut = actInfo.DataIn;
+
+			foreach (string key in postData.AllKeys) {
+				string[] parts = key.Split('_');
+				if (parts.Length > 1) {
+					postData.Add(parts[0], postData.Get(key));
+				}
+			}
+			
+			LifxControlActionData data = LifxControlActionData.Unserialize(actInfo.DataIn);
+			
+			// Are we changing the action type?
+			string newActionType = postData.Get("ActionType");
+			if (newActionType != null && int.Parse(newActionType) != actInfo.SubTANumber) {
+				output.TrigActInfo.SubTANumber = int.Parse(newActionType);
+			}
+			
+			// Every action has a device
+			string newDevRef = postData.Get("Device");
+			if (newDevRef != null && int.Parse(newDevRef) != data.DevRef) {
+				data.DevRef = int.Parse(newDevRef);
+			}
+
+			string newStringVal = postData.Get("StringValue");
+			if (newStringVal != null && LifxControlActionData.IsValidTimeSpan(newStringVal)) {
+				newStringVal = LifxControlActionData.DecodeTimeSpan(newStringVal).ToString();
+			} else if (newStringVal != null && newStringVal.Substring(0, 1) == "#") {
+				newStringVal = newStringVal.Substring(1);
+			}
+			
+			if (newStringVal != null && newStringVal != data.StringValue) {
+				data.StringValue = newStringVal;
+			}
+
+			if (output.TrigActInfo.SubTANumber != actInfo.SubTANumber) {
+				// If the action type changes, clear the string value
+				data.StringValue = "";
+			}
+
+			output.DataOut = data.Serialize();
+			
+			return output;
+		}
+
+		public override bool ActionConfigured(IPlugInAPI.strTrigActInfo actInfo) {
+			LifxControlActionData data = LifxControlActionData.Unserialize(actInfo.DataIn);
+			if (actInfo.SubTANumber == LifxControlActionData.ACTION_UNSELECTED || data.DevRef == 0 || string.IsNullOrEmpty(data.StringValue)) {
+				return false;
+			}
+
+			if (actInfo.SubTANumber == LifxControlActionData.ACTION_SET_COLOR && data.StringValue.Length != 6) {
+				// TODO eventually check for hex
+				return false;
+			}
+
+			int temp;
+			if (actInfo.SubTANumber == LifxControlActionData.ACTION_SET_TRANSITION_TIME && !int.TryParse(data.StringValue, out temp)) {
+				return false;
+			}
+			
+			return true;
+		}
+
 		public override string GetPagePlugin(string pageName, string user, int userRights, string queryString) {
 			Program.WriteLog("Debug", "Requested page name " + pageName + " by user " + user + " with rights " + userRights);
 
@@ -152,6 +309,50 @@ namespace HSPI_LIFX
 			}
 
 			return "";
+		}
+
+		public override string ActionFormatUI(IPlugInAPI.strTrigActInfo actInfo) {
+			if (actInfo.TANumber != 1) {
+				return "Unknown action number " + actInfo.TANumber;
+			}
+
+			LifxControlActionData data = LifxControlActionData.Unserialize(actInfo.DataIn);
+
+			StringBuilder builder = new StringBuilder();
+			builder.Append("Set LIFX ");
+			switch (actInfo.SubTANumber) {
+				case LifxControlActionData.ACTION_SET_COLOR:
+					builder.Append("<span class=\"event_Txt_Selection\">Color</span>");
+					break;
+				
+				case LifxControlActionData.ACTION_SET_TRANSITION_TIME:
+					builder.Append("<span class=\"event_Txt_Selection\">Transition Time</span>");
+					break;
+				
+				default:
+					builder.Append("UNKNOWN");
+					break;
+			}
+
+			builder.Append(" for <span class=\"event_Txt_Option\">");
+			builder.Append(((DeviceClass) hs.GetDeviceByRef(data.DevRef)).get_Name(hs));
+			builder.Append("</span> to ");
+
+			switch (actInfo.SubTANumber) {
+				case LifxControlActionData.ACTION_SET_COLOR:
+					builder.Append("<span style=\"color: #" + data.StringValue + "\">#" + data.StringValue.ToUpper() + "</span>");
+					break;
+				
+				case LifxControlActionData.ACTION_SET_TRANSITION_TIME:
+					builder.Append("<span class=\"event_Txt_Selection\">" + data.StringValue + " seconds</span>");
+					break;
+				
+				default:
+					builder.Append("UNKNOWN");
+					break;
+			}
+
+			return builder.ToString();
 		}
 
 		private string buildSettingsPage(string user, int userRights, string queryString,
@@ -361,5 +562,43 @@ for (var i in myqSavedSettings) {
 
 			return ulong.Parse(builder.ToString(), NumberStyles.HexNumber);
 		}
+
+		private List<DeviceDescriptor> getKnownDevices() {
+			if (knownDeviceCache != null) {
+				return knownDeviceCache;
+			}
+
+			List<DeviceDescriptor> devices = new List<DeviceDescriptor>();
+
+			clsDeviceEnumeration enumerator = (clsDeviceEnumeration) hs.GetDeviceEnumerator();
+			do {
+				DeviceClass enumeratedDevice = enumerator.GetNext();
+				if (enumeratedDevice == null) {
+					continue;
+				}
+
+				if (
+					enumeratedDevice.get_Interface(hs) == Name &&
+				    enumeratedDevice.get_Relationship(hs) == Enums.eRelationship.Parent_Root
+				) {
+					devices.Add(new DeviceDescriptor {
+						DevName = enumeratedDevice.get_Name(hs),
+						DevRef = enumeratedDevice.get_Ref(hs)
+					});
+				}
+			} while (!enumerator.Finished);
+
+			knownDeviceCache = devices.OrderBy(d => d.DevName).ToList();
+			Timer reset = new Timer(60000) {AutoReset = false};
+			reset.Elapsed += (object src, ElapsedEventArgs args) => { knownDeviceCache = null; };
+			reset.Start();
+			return knownDeviceCache;
+		}
+	}
+
+	public class DeviceDescriptor
+	{
+		public int DevRef { get; set; }
+		public string DevName { get; set; }
 	}
 }
