@@ -168,10 +168,12 @@ namespace HSPI_LIFX
 			clsJQuery.jqDropList actionSelector = new clsJQuery.jqDropList("ActionType" + unique, "events", true);
 			actionSelector.AddItem("(Choose A LIFX Action)", LifxControlActionData.ACTION_UNSELECTED.ToString(),
 				actInfo.SubTANumber == LifxControlActionData.ACTION_UNSELECTED);
-			actionSelector.AddItem("Set Color", LifxControlActionData.ACTION_SET_COLOR.ToString(),
+			actionSelector.AddItem("Set color...", LifxControlActionData.ACTION_SET_COLOR.ToString(),
 				actInfo.SubTANumber == LifxControlActionData.ACTION_SET_COLOR);
-			actionSelector.AddItem("Set Transition Time", LifxControlActionData.ACTION_SET_TRANSITION_TIME.ToString(),
-				actInfo.SubTANumber == LifxControlActionData.ACTION_SET_TRANSITION_TIME);
+			actionSelector.AddItem("Set color and brightness...", LifxControlActionData.ACTION_SET_COLOR_AND_BRIGHTNESS.ToString(),
+				actInfo.SubTANumber == LifxControlActionData.ACTION_SET_COLOR_AND_BRIGHTNESS);
+			/*actionSelector.AddItem("Set transition time...", LifxControlActionData.ACTION_SET_TRANSITION_TIME.ToString(),
+				actInfo.SubTANumber == LifxControlActionData.ACTION_SET_TRANSITION_TIME);*/
 			builder.Append(actionSelector.Build());
 
 			// Device selector dropdown
@@ -191,37 +193,61 @@ namespace HSPI_LIFX
 						break;
 
 					case LifxControlActionData.ACTION_SET_COLOR:
+					case LifxControlActionData.ACTION_SET_COLOR_AND_BRIGHTNESS:
 						string chosenColor = "ffffff";
-						if (!string.IsNullOrEmpty(data.StringValue)) {
-							chosenColor = data.StringValue;
+						if (!string.IsNullOrEmpty(data.Color)) {
+							chosenColor = data.Color;
 						}
 
 						clsJQuery.jqColorPicker colorPicker =
-							new clsJQuery.jqColorPicker("StringValue" + unique, "events", 6, chosenColor);
+							new clsJQuery.jqColorPicker("Color" + unique, "events", 6, chosenColor);
 						builder.Append(colorPicker.Build());
+
+						if (actInfo.SubTANumber == LifxControlActionData.ACTION_SET_COLOR_AND_BRIGHTNESS) {
+							clsJQuery.jqDropList brightnessPicker =
+								new clsJQuery.jqDropList("BrightnessPercent" + unique, "events", true);
+							brightnessPicker.AddItem("", "255", data.BrightnessPercent == 255);
+							for (byte i = 0; i <= 100; i++) {
+								brightnessPicker.AddItem(i + "%", i.ToString(), data.BrightnessPercent == i);
+							}
+
+							builder.Append(brightnessPicker.Build());
+						}
 
 						// This is necessary to work around a HS3 bug that doesn't submit the color picker properly
 						clsJQuery.jqButton colorSaveBtn =
 							new clsJQuery.jqButton("SaveBtn", "Save Color", "events", true);
 						colorSaveBtn.submitForm = true;
 						builder.Append(colorSaveBtn.Build());
-						builder.Append("<br />Due to an HS3 bug, you must press Save Color to save this event.");
+						builder.Append("<br />Due to an HS3 bug, you may need to press Save Color to save this event.<br />");
+
+						clsJQuery.jqCheckBox overrideTransitionBox =
+							new clsJQuery.jqCheckBox("OverrideTransitionTime" + unique, "Override transition time",
+								"Events", true, true);
+						overrideTransitionBox.@checked =
+							data.HasFlag(LifxControlActionData.FLAG_OVERRIDE_TRANSITION_TIME);
+						builder.Append(overrideTransitionBox.Build());
+						
 						break;
 
 					case LifxControlActionData.ACTION_SET_TRANSITION_TIME:
-						clsJQuery.jqTimeSpanPicker timePicker =
-							new clsJQuery.jqTimeSpanPicker("StringValue" + unique, "Transition Time", "events",
-								true);
-						double timeInterval;
-						timePicker.showDays = false;
-						timePicker.defaultTimeSpan = TimeSpan.FromSeconds(double.TryParse(data.StringValue, out timeInterval) ? timeInterval : 1);
-						builder.Append(timePicker.Build());
+						// nothing
 						break;
 
 					default:
 						builder.Append("Unknown action type " + actInfo.SubTANumber);
 						break;
 				}
+			}
+
+			if (actInfo.SubTANumber == LifxControlActionData.ACTION_SET_TRANSITION_TIME ||
+			    data.HasFlag(LifxControlActionData.FLAG_OVERRIDE_TRANSITION_TIME)) {
+				
+				clsJQuery.jqTimeSpanPicker timePicker =
+					new clsJQuery.jqTimeSpanPicker("TransitionTime" + unique, "Transition Time", "events", true);
+				timePicker.showDays = false;
+				timePicker.defaultTimeSpan = TimeSpan.FromSeconds(data.TransitionTimeSeconds == 0 ? 1 : data.TransitionTimeSeconds);
+				builder.Append(timePicker.Build());
 			}
 
 			return builder.ToString();
@@ -260,20 +286,27 @@ namespace HSPI_LIFX
 				data.DevRef = int.Parse(newDevRef);
 			}
 
-			string newStringVal = postData.Get("StringValue");
-			if (newStringVal != null && LifxControlActionData.IsValidTimeSpan(newStringVal)) {
-				newStringVal = LifxControlActionData.DecodeTimeSpan(newStringVal).ToString();
-			} else if (newStringVal != null && newStringVal.Substring(0, 1) == "#") {
-				newStringVal = newStringVal.Substring(1);
-			}
-			
-			if (newStringVal != null && newStringVal != data.StringValue) {
-				data.StringValue = newStringVal;
+			string newColor = postData.Get("Color");
+			if (newColor != null) {
+				data.Color = newColor.Replace("#", "");
 			}
 
-			if (output.TrigActInfo.SubTANumber != actInfo.SubTANumber) {
-				// If the action type changes, clear the string value
-				data.StringValue = "";
+			string newTransitionTime = postData.Get("TransitionTime");
+			if (newTransitionTime != null && LifxControlActionData.IsValidTimeSpan(newTransitionTime)) {
+				data.TransitionTimeSeconds = (uint) LifxControlActionData.DecodeTimeSpan(newTransitionTime);
+			}
+
+			string newBrightnessPct = postData.Get("BrightnessPercent");
+			byte newBrightness;
+			if (newBrightnessPct != null && byte.TryParse(newBrightnessPct, out newBrightness)) {
+				data.BrightnessPercent = newBrightness;
+			}
+
+			string newOverrideTransitionTime = postData.Get("OverrideTransitionTime");
+			if (newOverrideTransitionTime == "checked") {
+				data.Flags |= LifxControlActionData.FLAG_OVERRIDE_TRANSITION_TIME;
+			} else if (newOverrideTransitionTime == "unchecked") {
+				data.Flags &= ~LifxControlActionData.FLAG_OVERRIDE_TRANSITION_TIME;
 			}
 
 			output.DataOut = data.Serialize();
@@ -283,17 +316,26 @@ namespace HSPI_LIFX
 
 		public override bool ActionConfigured(IPlugInAPI.strTrigActInfo actInfo) {
 			LifxControlActionData data = LifxControlActionData.Unserialize(actInfo.DataIn);
-			if (actInfo.SubTANumber == LifxControlActionData.ACTION_UNSELECTED || data.DevRef == 0 || string.IsNullOrEmpty(data.StringValue)) {
+			if (actInfo.SubTANumber == LifxControlActionData.ACTION_UNSELECTED || data.DevRef == 0) {
 				return false;
 			}
 
-			if (actInfo.SubTANumber == LifxControlActionData.ACTION_SET_COLOR && data.StringValue.Length != 6) {
+			if (actInfo.SubTANumber == LifxControlActionData.ACTION_SET_COLOR && data.Color.Length != 6) {
 				// TODO eventually check for hex
 				return false;
 			}
 
-			int temp;
-			if (actInfo.SubTANumber == LifxControlActionData.ACTION_SET_TRANSITION_TIME && !int.TryParse(data.StringValue, out temp)) {
+			if (actInfo.SubTANumber == LifxControlActionData.ACTION_SET_COLOR_AND_BRIGHTNESS &&
+			    (data.Color.Length != 6 || data.BrightnessPercent == 255)) {
+				return false;
+			}
+			
+			if (actInfo.SubTANumber == LifxControlActionData.ACTION_SET_TRANSITION_TIME && data.TransitionTimeSeconds == 0) {
+				return false;
+			}
+
+			if (data.HasFlag(LifxControlActionData.FLAG_OVERRIDE_TRANSITION_TIME) &&
+			    data.TransitionTimeSeconds == 0) {
 				return false;
 			}
 			
@@ -322,6 +364,7 @@ namespace HSPI_LIFX
 			builder.Append("Set LIFX ");
 			switch (actInfo.SubTANumber) {
 				case LifxControlActionData.ACTION_SET_COLOR:
+				case LifxControlActionData.ACTION_SET_COLOR_AND_BRIGHTNESS:
 					builder.Append("<span class=\"event_Txt_Selection\">Color</span>");
 					break;
 				
@@ -340,16 +383,31 @@ namespace HSPI_LIFX
 
 			switch (actInfo.SubTANumber) {
 				case LifxControlActionData.ACTION_SET_COLOR:
-					builder.Append("<span style=\"color: #" + data.StringValue + "\">#" + data.StringValue.ToUpper() + "</span>");
+				case LifxControlActionData.ACTION_SET_COLOR_AND_BRIGHTNESS:
+					builder.Append(
+						"<span style=\"display: inline-block; width: 10px; height: 10px; background-color: #" +
+						data.Color + "\"></span> ");
+					
+					builder.Append("<span class=\"event_Txt_Selection\">#" + data.Color.ToUpper() + "</span>");
+					if (actInfo.SubTANumber == LifxControlActionData.ACTION_SET_COLOR_AND_BRIGHTNESS) {
+						builder.Append(" with brightness <span class=\"event_Txt_Selection\">" +
+						               data.BrightnessPercent + "%</span>");
+					}
 					break;
 				
 				case LifxControlActionData.ACTION_SET_TRANSITION_TIME:
-					builder.Append("<span class=\"event_Txt_Selection\">" + data.StringValue + " seconds</span>");
+					builder.Append("<span class=\"event_Txt_Selection\">" + data.TransitionTimeSeconds + " seconds</span>");
 					break;
 				
 				default:
 					builder.Append("UNKNOWN");
 					break;
+			}
+
+			if (data.HasFlag(LifxControlActionData.FLAG_OVERRIDE_TRANSITION_TIME)) {
+				builder.Append(" over <span class=\"event_Txt_Selection\">");
+				builder.Append(data.TransitionTimeSeconds);
+				builder.Append(" seconds</span>");
 			}
 
 			return builder.ToString();
