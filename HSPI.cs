@@ -415,6 +415,87 @@ namespace HSPI_LIFX
 			return builder.ToString();
 		}
 
+		public override bool HandleAction(IPlugInAPI.strTrigActInfo actInfo) {
+			if (actInfo.TANumber != 1) {
+				Program.WriteLog("error", "Bad action number " + actInfo.TANumber + " for event " + actInfo.evRef);
+				return false;
+			}
+			
+			LifxControlActionData data = LifxControlActionData.Unserialize(actInfo.DataIn);
+
+			switch (actInfo.SubTANumber) {
+				case LifxControlActionData.ACTION_SET_COLOR:
+				case LifxControlActionData.ACTION_SET_COLOR_AND_BRIGHTNESS:
+					int rootRef = data.DevRef;
+					DeviceClass device = (DeviceClass) hs.GetDeviceByRef(rootRef);
+					DeviceBundle bundle = new DeviceBundle(device.get_Address(hs).Split('-')[0], this);
+					bundle.Root = rootRef;
+					bundle.TryFindChildren();
+					if (!bundle.IsComplete()) {
+						Program.WriteLog("error", "Didn't find a complete device bundle for root " + rootRef + " address " + bundle.Address + " for event " + actInfo.evRef);
+						Program.WriteLog("error", bundle.Root + "," + bundle.Color + "," + bundle.Temperature + "," + bundle.Brightness);
+						return false;
+					}
+
+					LifxClient.Device lifxDevice = lifxClient.GetDeviceByAddress(hs3AddressToLifxAddress(bundle.Address));
+					if (lifxDevice == null) {
+						Program.WriteLog("error",
+							"No LIFX device found on the network for address " + bundle.Address + "for event " +
+							actInfo.evRef);
+						return false;
+					}
+
+					HSV color = ColorConvert.rgbToHsv(ColorConvert.stringToRgb(data.Color));
+					ushort hue = (ushort) (color.Hue * ushort.MaxValue);
+					ushort sat = (ushort) (color.Saturation * ushort.MaxValue);
+					uint transitionTime = data.HasFlag(LifxControlActionData.FLAG_OVERRIDE_TRANSITION_TIME)
+						? data.TransitionTimeSeconds * 1000
+						: TRANSITION_TIME;
+					ushort temperature = (ushort) ((DeviceClass) hs.GetDeviceByRef(bundle.Temperature)).get_devValue(hs);
+					byte brightPct;
+					if (actInfo.SubTANumber == LifxControlActionData.ACTION_SET_COLOR_AND_BRIGHTNESS) {
+						brightPct = data.BrightnessPercent;
+					} else {
+						brightPct = (byte) ((DeviceClass) hs.GetDeviceByRef(bundle.Brightness)).get_devValue(hs);
+					}
+
+					ushort brightness = (ushort) (((double) brightPct / 100.0) * ushort.MaxValue);
+					Task.Run(async () => {
+						if (brightness == 0) {
+							await lifxDevice.SetPoweredWithAck(false, transitionTime);
+							await Task.Delay((int) transitionTime);
+							lifxDevice.SetColor(hue, sat, brightness, temperature, 0);
+
+							hs.SetDeviceString(bundle.Color, data.Color, true);
+							if (actInfo.SubTANumber == LifxControlActionData.ACTION_SET_COLOR_AND_BRIGHTNESS) {
+								hs.SetDeviceValueByRef(bundle.Brightness, data.BrightnessPercent, true);
+							}
+						} else {
+							// Brightness is > 0, so turn it on if necessary
+							LifxClient.LightStatus status = await lifxDevice.QueryLightStatus();
+							if (!status.Powered) {
+								// Set color first
+								await lifxDevice.SetColorWithAck(hue, sat, brightness, temperature, 0);
+								lifxDevice.SetPowered(true, transitionTime);
+							} else {
+								// It's already on, so just set color
+								lifxDevice.SetColor(hue, sat, brightness, temperature, transitionTime);
+							}
+
+							hs.SetDeviceString(bundle.Color, data.Color, true);
+							if (actInfo.SubTANumber == LifxControlActionData.ACTION_SET_COLOR_AND_BRIGHTNESS) {
+								hs.SetDeviceValueByRef(bundle.Brightness, data.BrightnessPercent, true);
+							}
+						}
+					});
+					
+					return true;
+				
+				default:
+					return false;
+			}
+		}
+
 		private string buildSettingsPage(string user, int userRights, string queryString,
 			string messageBox = null, string messageBoxClass = null) {
 			
