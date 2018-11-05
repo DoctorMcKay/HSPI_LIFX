@@ -40,6 +40,8 @@ namespace HSPI_LIFX
 			};
 			callbacks.RegisterConfigLink(configLink);
 			callbacks.RegisterLink(configLink);
+			
+			updateKnownDeviceCache();
 
 			lifxClient = new LifxClient.Client {DiscoveryFrequency = 10000};
 			lifxClient.StartDiscovery();
@@ -180,7 +182,7 @@ namespace HSPI_LIFX
 			if (actInfo.SubTANumber != LifxControlActionData.ACTION_UNSELECTED) {
 				clsJQuery.jqDropList deviceSelector = new clsJQuery.jqDropList("Device" + unique, "events", true);
 				deviceSelector.AddItem("(Choose A Device)", "0", data.DevRef == 0);
-				foreach (DeviceDescriptor device in getKnownDevices()) {
+				foreach (DeviceDescriptor device in knownDeviceCache) {
 					deviceSelector.AddItem(device.DevName, device.DevRef.ToString(), data.DevRef == device.DevRef);
 				}
 
@@ -598,6 +600,7 @@ for (var i in myqSavedSettings) {
 			} else {
 				Program.WriteLog("info", "Creating HS3 devices for LIFX device " + hs3Addr + " (" + lifxDevice.LastKnownStatus.Label + ")");
 				bundle.CreateDevices(lifxDevice.LastKnownStatus.Label);
+				updateKnownDeviceCache();
 			}
 		}
 		
@@ -621,11 +624,7 @@ for (var i in myqSavedSettings) {
 			return ulong.Parse(builder.ToString(), NumberStyles.HexNumber);
 		}
 
-		private List<DeviceDescriptor> getKnownDevices() {
-			if (knownDeviceCache != null) {
-				return knownDeviceCache;
-			}
-
+		private void updateKnownDeviceCache() {
 			List<DeviceDescriptor> devices = new List<DeviceDescriptor>();
 
 			clsDeviceEnumeration enumerator = (clsDeviceEnumeration) hs.GetDeviceEnumerator();
@@ -647,10 +646,6 @@ for (var i in myqSavedSettings) {
 			} while (!enumerator.Finished);
 
 			knownDeviceCache = devices.OrderBy(d => d.DevName).ToList();
-			Timer reset = new Timer(60000) {AutoReset = false};
-			reset.Elapsed += (object src, ElapsedEventArgs args) => { knownDeviceCache = null; };
-			reset.Start();
-			return knownDeviceCache;
 		}
 	}
 
