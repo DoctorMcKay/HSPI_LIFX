@@ -251,29 +251,31 @@ namespace LifxClient
 		public uint SourceID { get; set; }
 		public byte Sequence { get; set; }
 
-		public override int GetHashCode() {
-			byte hi = (byte) ((SourceID >> 24) & 0xff);
-			byte medHi = (byte) ((SourceID >> 16) & 0xff);
-			byte medLo = (byte) ((SourceID >> 8) & 0xff);
-			byte lo = (byte) (SourceID & 0xff);
-
-			hi ^= Sequence;
-			medHi ^= Sequence;
-			medLo ^= Sequence;
-			lo ^= Sequence;
-
-			return (hi << 24) |
-			       (medHi << 16) |
-			       (medLo << 8) |
-			       lo;
-		}
-
-		public override bool Equals(object other) {
-			return Equals(other as RequestId);
-		}
-
 		public bool Equals(RequestId other) {
+			if (ReferenceEquals(null, other)) return false;
+			if (ReferenceEquals(this, other)) return true;
 			return SourceID == other.SourceID && Sequence == other.Sequence;
+		}
+
+		public override bool Equals(object obj) {
+			if (ReferenceEquals(null, obj)) return false;
+			if (ReferenceEquals(this, obj)) return true;
+			if (obj.GetType() != this.GetType()) return false;
+			return Equals((RequestId) obj);
+		}
+
+		public override int GetHashCode() {
+			unchecked {
+				return ((int) SourceID * 397) ^ Sequence.GetHashCode();
+			}
+		}
+
+		public static bool operator ==(RequestId left, RequestId right) {
+			return Equals(left, right);
+		}
+
+		public static bool operator !=(RequestId left, RequestId right) {
+			return !Equals(left, right);
 		}
 	}
 	
