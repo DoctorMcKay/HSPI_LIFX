@@ -566,6 +566,22 @@ namespace HSPI_LIFX
 			Program.WriteLog("debug", "ConfigDevice called for device " + devRef + " by user " + user + " with rights " + userRights);
 
 			DeviceClass device = (DeviceClass) hs.GetDeviceByRef(devRef);
+			if (device.get_Relationship(hs) != Enums.eRelationship.Parent_Root) {
+				// find the parent
+				DeviceClass parentDevice = null;
+				foreach (int associatedRef in device.get_AssociatedDevices(hs)) {
+					parentDevice = (DeviceClass) hs.GetDeviceByRef(associatedRef);
+					if (parentDevice.get_Relationship(hs) == Enums.eRelationship.Parent_Root) {
+						device = parentDevice;
+						devRef = associatedRef;
+						break;
+					}
+				}
+
+				if (device != parentDevice) {
+					return "Error finding parent device.";
+				}
+			}
 			PlugExtraData.clsPlugExtraData extraData = device.get_PlugExtraData_Get(hs);
 			object tempObj;
 
