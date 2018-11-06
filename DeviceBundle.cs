@@ -15,7 +15,7 @@ namespace HSPI_LIFX
 		private readonly HSPI plugin;
 
 		public DeviceBundle(string address, HSPI plugin) {
-			this.Address = address;
+			this.Address = address.Split('-')[0];
 			this.plugin = plugin;
 		}
 
@@ -68,6 +68,15 @@ namespace HSPI_LIFX
 			createColor(label);
 			createTemperature(label);
 			associateDevices();
+		}
+
+		public void UpdateName(string label) {
+			IHSApplication hs = plugin.hs;
+
+			((DeviceClass) hs.GetDeviceByRef(Root)).set_Name(hs, label);
+			((DeviceClass) hs.GetDeviceByRef(Brightness)).set_Name(hs, label + " Brightness");
+			((DeviceClass) hs.GetDeviceByRef(Color)).set_Name(hs, label + " Color");
+			((DeviceClass) hs.GetDeviceByRef(Temperature)).set_Name(hs, label + " Color Temperature");
 		}
 
 		private void createRoot(string label) {

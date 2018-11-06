@@ -18,14 +18,20 @@ namespace HSPI_LIFX
 	{
 		private LifxClient.Client lifxClient;
 		private List<DeviceDescriptor> knownDeviceCache;
+		private readonly List<DeviceDescriptor> devicesToPoll;
+		private Timer pollTimer;
 		
-		private const uint TRANSITION_TIME = 1000; // TODO make this configurable
+		private const uint TRANSITION_TIME = 1000;
+		private const ushort DISCOVERY_FREQUENCY = 10000;
+		private const ushort DEVICE_STATUS_POLL_FREQUENCY = 10000;
 		
 		public HSPI() {
 			Name = "LIFX";
 			PluginIsFree = true;
 			PluginActionCount = 1;
 			PluginSupportsConfigDevice = true;
+			
+			devicesToPoll = new List<DeviceDescriptor>();
 		}
 
 		public override string InitIO(string port) {
@@ -33,17 +39,38 @@ namespace HSPI_LIFX
 			
 			updateKnownDeviceCache();
 
-			lifxClient = new LifxClient.Client {DiscoveryFrequency = 10000};
+			Program.WriteLog("console", "Known device cache updated");
+			
+			foreach (DeviceDescriptor device in knownDeviceCache) {
+				if (checkShouldPollDevice(device)) {
+					devicesToPoll.Add(device);
+				}
+			}
+
+			Program.WriteLog("console", "Devices to poll list built");
+
+			lifxClient = new LifxClient.Client {DiscoveryFrequency = DISCOVERY_FREQUENCY};
 			lifxClient.StartDiscovery();
 			lifxClient.DeviceDiscovered += (object source, LifxClient.DeviceEventArgs args) => {
 				processDiscoveredDevice(args.Device);
 			};
 			
+			Program.WriteLog("console", "LIFX client started discovery");
+			
+			pollTimer = new Timer(DEVICE_STATUS_POLL_FREQUENCY);
+			pollTimer.AutoReset = true;
+			pollTimer.Elapsed += (object src, ElapsedEventArgs args) => { pollDevices(); };
+			pollTimer.Start();
+
+			Program.WriteLog("verbose", "InitIO returning");
 			return "";
 		}
 
 		public override void SetIOMulti(List<CAPI.CAPIControl> colSend) {
 			// TODO inspect all the commands at once
+
+			// Reset the poll timer so we don't run the risk of race conditions
+			pollTimer.Start();
 			
 			foreach (CAPI.CAPIControl ctrl in colSend) {
 				int devRef = ctrl.Ref;
@@ -77,11 +104,22 @@ namespace HSPI_LIFX
 					continue;
 				}
 
+				uint transitionTime = TRANSITION_TIME;
+				PlugExtraData.clsPlugExtraData extraData = device.get_PlugExtraData_Get(hs);
+				try {
+					object tempObj;
+					tempObj = extraData.GetNamed("TransitionRateMs");
+					if (tempObj != null) {
+						transitionTime = (uint) tempObj;
+					}
+				}
+				catch (Exception) {}
+
 				if (subType == SubDeviceType.Brightness && controlValue == 0) {
-					lifxDevice.SetPowered(false, TRANSITION_TIME);
+					lifxDevice.SetPowered(false, transitionTime);
 					hs.SetDeviceValueByRef(devRef, controlValue, true);
 				} else if (subType == SubDeviceType.Brightness && controlValue == 255) {
-					lifxDevice.SetPowered(true, TRANSITION_TIME);
+					lifxDevice.SetPowered(true, transitionTime);
 					Task.Run(async () => {
 						LifxClient.LightStatus status = await lifxDevice.QueryLightStatus();
 						hs.SetDeviceValueByRef(devRef, (int) ((double) status.Brightness / ushort.MaxValue * 100), true);
@@ -123,9 +161,9 @@ namespace HSPI_LIFX
 
 						if (!status.Powered && brightness > 0) {
 							await lifxDevice.SetColorWithAck(hue, saturation, brightness, temperature, 0);
-							lifxDevice.SetPowered(true, TRANSITION_TIME);
+							lifxDevice.SetPowered(true, transitionTime);
 						} else {
-							lifxDevice.SetColor(hue, saturation, brightness, temperature, TRANSITION_TIME);
+							lifxDevice.SetColor(hue, saturation, brightness, temperature, transitionTime);
 						}
 						
 						if (!String.IsNullOrEmpty(controlString)) {
@@ -398,6 +436,9 @@ namespace HSPI_LIFX
 				Program.WriteLog("error", "Bad action number " + actInfo.TANumber + " for event " + actInfo.evRef);
 				return false;
 			}
+
+			// Reset the poll timer so we don't run the risk of race conditions
+			pollTimer.Start();
 			
 			LifxControlActionData data = LifxControlActionData.Unserialize(actInfo.DataIn);
 
@@ -423,12 +464,23 @@ namespace HSPI_LIFX
 						return false;
 					}
 
+					uint transitionTime = TRANSITION_TIME;
+					PlugExtraData.clsPlugExtraData extraData = device.get_PlugExtraData_Get(hs);
+					try {
+						object tempObj = extraData.GetNamed("TransitionRateMs");
+						if (tempObj != null) {
+							transitionTime = (uint) tempObj;
+						}
+					}
+					catch (Exception) {}
+
+					if (data.HasFlag(LifxControlActionData.FLAG_OVERRIDE_TRANSITION_TIME)) {
+						transitionTime = data.TransitionTimeMilliseconds;
+					}
+					
 					HSV color = ColorConvert.rgbToHsv(ColorConvert.stringToRgb(data.Color));
 					ushort hue = (ushort) (color.Hue * ushort.MaxValue);
 					ushort sat = (ushort) (color.Saturation * ushort.MaxValue);
-					uint transitionTime = data.HasFlag(LifxControlActionData.FLAG_OVERRIDE_TRANSITION_TIME)
-						? data.TransitionTimeMilliseconds
-						: TRANSITION_TIME;
 					ushort temperature = (ushort) ((DeviceClass) hs.GetDeviceByRef(bundle.Temperature)).get_devValue(hs);
 					byte brightPct;
 					if (actInfo.SubTANumber == LifxControlActionData.ACTION_SET_COLOR_AND_BRIGHTNESS) {
@@ -514,7 +566,7 @@ namespace HSPI_LIFX
 			builder.Append("<tr><td class=\"tablecell\" colspan=\"1\" align=\"left\">Sync Device Name:</td>");
 			builder.Append("<td class=\"tablecell\" colspan=\"7\" align=\"left\">");
 			builder.Append(checkBox.Build());
-			builder.Append("<br /><hr />Updates the device's name in HS3 if it changes in the LIFX app, and vice versa.<br />Enabling this option results in slightly more LAN traffic.");
+			builder.Append("<br /><hr />Updates the device's name in HS3 if it changes in the LIFX app.<br />Do not enable this option if you want the device to have a different name in HS3 and in the LIFX app.<br />Enabling this option results in slightly more LAN traffic.");
 			builder.Append("</td></tr>");
 			
 			// Sync state
@@ -569,6 +621,13 @@ namespace HSPI_LIFX
 			}
 
 			device.set_PlugExtraData_Set(hs, extraData);
+			DeviceDescriptor descriptor = findDeviceDescriptorByRef(devRef);
+			bool shouldPollDevice = checkShouldPollDevice(descriptor, extraData);
+			if (shouldPollDevice && !devicesToPoll.Contains(descriptor)) {
+				devicesToPoll.Add(descriptor);
+			} else if (!shouldPollDevice && devicesToPoll.Contains(descriptor)) {
+				devicesToPoll.Remove(descriptor);
+			}
 
 			return postData.Get("LifxDone") != null
 				? Enums.ConfigDevicePostReturn.DoneAndSave
@@ -631,18 +690,170 @@ namespace HSPI_LIFX
 				) {
 					devices.Add(new DeviceDescriptor {
 						DevName = enumeratedDevice.get_Name(hs),
-						DevRef = enumeratedDevice.get_Ref(hs)
+						DevRef = enumeratedDevice.get_Ref(hs),
+						DevAddress = enumeratedDevice.get_Address(hs).Split('-')[0],
 					});
 				}
 			} while (!enumerator.Finished);
 
 			knownDeviceCache = devices.OrderBy(d => d.DevName).ToList();
 		}
+		
+		public DeviceDescriptor findDeviceDescriptorByRef(int devRef) {
+			foreach (DeviceDescriptor device in knownDeviceCache) {
+				if (device.DevRef == devRef) {
+					return device;
+				}
+			}
+
+			return null;
+		}
+
+		private bool checkShouldPollDevice(DeviceDescriptor device, PlugExtraData.clsPlugExtraData extraData = null) {
+			try {
+				if (extraData == null) {
+					extraData = ((DeviceClass) hs.GetDeviceByRef(device.DevRef)).get_PlugExtraData_Get(hs);
+				}
+
+				object tempObj;
+				if ((tempObj = extraData.GetNamed("SyncLabel")) != null && (bool) tempObj) {
+					return true;
+				}
+
+				if ((tempObj = extraData.GetNamed("SyncState")) != null && (bool) tempObj) {
+					return true;
+				}
+
+				return false;
+			}
+			catch (Exception ex) {
+				Program.WriteLog("warn",
+					"Exception trying to check whether we should poll device " + device.DevRef + ": " + ex.Message);
+				return false;
+			}
+		}
+
+		private void pollDevices() {
+			foreach (DeviceDescriptor descriptor in devicesToPoll) {
+				LifxClient.Device lifxDevice = lifxClient.GetDeviceByAddress(hs3AddressToLifxAddress(descriptor.DevAddress));
+				if (lifxDevice == null) {
+					continue;
+				}
+
+				DeviceClass hsDevice = (DeviceClass) hs.GetDeviceByRef(descriptor.DevRef);
+				DeviceBundle bundle = new DeviceBundle(hsDevice.get_Address(hs), this) {Root = descriptor.DevRef};
+				bool shouldUpdateLabel = false;
+				bool shouldUpdateState = false;
+
+				PlugExtraData.clsPlugExtraData extraData = hsDevice.get_PlugExtraData_Get(hs);
+				try {
+					object tempObj = extraData.GetNamed("SyncLabel");
+					if (tempObj != null && (bool) tempObj) {
+						shouldUpdateLabel = true;
+					}
+				}
+				catch (Exception) {}
+				
+				try {
+					object tempObj = extraData.GetNamed("SyncState");
+					if (tempObj != null && (bool) tempObj) {
+						shouldUpdateState = true;
+					}
+				}
+				catch (Exception) {}
+
+				Task.Run(async () => {
+					Program.WriteLog("verbose", "Running poll on LIFX device " + bundle.Address + ", ref "+
+					                            bundle.Root + " to sync " +
+					                            (shouldUpdateLabel ? "label " : "") +
+					                            (shouldUpdateState ? "state" : "")
+					);
+					LifxClient.LightStatus status = await lifxDevice.QueryLightStatus();
+					bundle.TryFindChildren();
+					if (!bundle.IsComplete()) {
+						return;
+					}
+					
+					if (shouldUpdateLabel && status.Label != hsDevice.get_Name(hs)) {
+						// Name has changed, so sync it
+						Program.WriteLog("info", "Syncing device " + bundle.Root + " name to \"" + status.Label + "\" (was \"" + hsDevice.get_Name(hs) + "\")");
+						bundle.UpdateName(status.Label);
+					}
+
+					if (shouldUpdateState) {
+						HSV hsv = new HSV();
+						hsv.Hue = (double) status.Hue / ushort.MaxValue;
+						hsv.Saturation = (double) status.Saturation / ushort.MaxValue;
+
+						DeviceClass devBright = (DeviceClass) hs.GetDeviceByRef(bundle.Brightness);
+						DeviceClass devColor = (DeviceClass) hs.GetDeviceByRef(bundle.Color);
+						DeviceClass devTemp = (DeviceClass) hs.GetDeviceByRef(bundle.Temperature);
+
+						byte actualBright = status.Powered
+							? (byte) Math.Min(Math.Round(((double) status.Brightness / ushort.MaxValue) * 100.0), 99)
+							: (byte) 0;
+						byte hsBright = (byte) devBright.get_devValue(hs);
+						if (actualBright != hsBright) {
+							Program.WriteLog("info",
+								"Updating brightness in HS3 for device " + bundle.Root + "; it is " + actualBright +
+								" but HS3 believes it is " + hsBright);
+							hs.SetDeviceValueByRef(bundle.Brightness, actualBright, true);
+						} else {
+							Program.WriteLog("silly", "Brightness in HS3 for device " + bundle.Root + " matches: " + actualBright + " vs " + hsBright);
+						}
+
+						string actualColor = ColorConvert.hsvToRgb(hsv).ToString().ToLower();
+						string hsColor = devColor.get_devString(hs).ToLower();
+						if (actualColor != hsColor) {
+							Program.WriteLog("info",
+								"Updating color in HS3 for device " + bundle.Root + "; it is " + actualColor +
+								" but HS3 believes it is " + hsColor);
+							hs.SetDeviceString(bundle.Color, actualColor, true);
+						} else {
+							Program.WriteLog("silly", "Color in HS3 for device " + bundle.Root + " matches: " + actualColor + " vs " + hsColor);
+						}
+
+						int hsTemp = (int) devTemp.get_devValue(hs);
+						if (status.Kelvin != hsTemp) {
+							Program.WriteLog("info",
+								"Updating temperature in HS3 for device " + bundle.Root + "; it is " + status.Kelvin +
+								" but HS3 believes it is " + hsTemp);
+							hs.SetDeviceValueByRef(bundle.Temperature, status.Kelvin, true);
+						} else {
+							Program.WriteLog("silly", "Temp in HS3 for device " + bundle.Root + " matches: " + status.Kelvin + " vs " + hsTemp);							
+						}
+					}
+				});
+			}
+		}
 	}
 
-	public class DeviceDescriptor
+	public class DeviceDescriptor : IEquatable<DeviceDescriptor>
 	{
 		public int DevRef { get; set; }
 		public string DevName { get; set; }
+		public string DevAddress { get; set; }
+		
+		public bool Equals(DeviceDescriptor other) {
+			if (ReferenceEquals(null, other)) return false;
+			if (ReferenceEquals(this, other)) return true;
+			return DevRef == other.DevRef && string.Equals(DevName, other.DevName) && string.Equals(DevAddress, other.DevAddress);
+		}
+
+		public override bool Equals(object obj) {
+			if (ReferenceEquals(null, obj)) return false;
+			if (ReferenceEquals(this, obj)) return true;
+			if (obj.GetType() != this.GetType()) return false;
+			return Equals((DeviceDescriptor) obj);
+		}
+
+		public override int GetHashCode() {
+			unchecked {
+				var hashCode = DevRef;
+				hashCode = (hashCode * 397) ^ DevName.GetHashCode();
+				hashCode = (hashCode * 397) ^ DevAddress.GetHashCode();
+				return hashCode;
+			}
+		}
 	}
 }
