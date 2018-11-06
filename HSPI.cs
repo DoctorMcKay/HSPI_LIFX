@@ -202,8 +202,8 @@ namespace HSPI_LIFX
 				actInfo.SubTANumber == LifxControlActionData.ACTION_SET_COLOR);
 			actionSelector.AddItem("Set color and brightness...", LifxControlActionData.ACTION_SET_COLOR_AND_BRIGHTNESS.ToString(),
 				actInfo.SubTANumber == LifxControlActionData.ACTION_SET_COLOR_AND_BRIGHTNESS);
-			/*actionSelector.AddItem("Set transition time...", LifxControlActionData.ACTION_SET_TRANSITION_TIME.ToString(),
-				actInfo.SubTANumber == LifxControlActionData.ACTION_SET_TRANSITION_TIME);*/
+			actionSelector.AddItem("Set transition time...", LifxControlActionData.ACTION_SET_TRANSITION_TIME.ToString(),
+				actInfo.SubTANumber == LifxControlActionData.ACTION_SET_TRANSITION_TIME);
 			builder.Append(actionSelector.Build());
 
 			// Device selector dropdown
@@ -442,11 +442,15 @@ namespace HSPI_LIFX
 			
 			LifxControlActionData data = LifxControlActionData.Unserialize(actInfo.DataIn);
 
+			int rootRef;
+			DeviceClass device;
+			PlugExtraData.clsPlugExtraData extraData;
+
 			switch (actInfo.SubTANumber) {
 				case LifxControlActionData.ACTION_SET_COLOR:
 				case LifxControlActionData.ACTION_SET_COLOR_AND_BRIGHTNESS:
-					int rootRef = data.DevRef;
-					DeviceClass device = (DeviceClass) hs.GetDeviceByRef(rootRef);
+					rootRef = data.DevRef;
+					device = (DeviceClass) hs.GetDeviceByRef(rootRef);
 					DeviceBundle bundle = new DeviceBundle(device.get_Address(hs).Split('-')[0], this);
 					bundle.Root = rootRef;
 					bundle.TryFindChildren();
@@ -465,7 +469,7 @@ namespace HSPI_LIFX
 					}
 
 					uint transitionTime = TRANSITION_TIME;
-					PlugExtraData.clsPlugExtraData extraData = device.get_PlugExtraData_Get(hs);
+					extraData = device.get_PlugExtraData_Get(hs);
 					try {
 						object tempObj = extraData.GetNamed("TransitionRateMs");
 						if (tempObj != null) {
@@ -519,6 +523,16 @@ namespace HSPI_LIFX
 						}
 					});
 					
+					return true;
+				
+				case LifxControlActionData.ACTION_SET_TRANSITION_TIME:
+					rootRef = data.DevRef;
+					device = (DeviceClass) hs.GetDeviceByRef(rootRef);
+					extraData = device.get_PlugExtraData_Get(hs);
+					
+					extraData.RemoveNamed("TransitionRateMs");
+					extraData.AddNamed("TransitionRateMs", data.TransitionTimeMilliseconds);
+					device.set_PlugExtraData_Set(hs, extraData);
 					return true;
 				
 				default:
