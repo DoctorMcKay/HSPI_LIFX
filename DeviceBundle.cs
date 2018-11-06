@@ -77,7 +77,7 @@ namespace HSPI_LIFX
 
 			IHSApplication hs = plugin.hs;
 
-			int hsRef = hs.NewDeviceRef(label + " Root");
+			int hsRef = hs.NewDeviceRef(label);
 			DeviceClass device = (DeviceClass) hs.GetDeviceByRef(hsRef);
 			device.set_Address(hs, GetSubDeviceAddress(SubDeviceType.Root));
 			device.set_Interface(hs, plugin.Name);
