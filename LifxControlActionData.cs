@@ -16,14 +16,14 @@ namespace HSPI_LIFX
 		public int DevRef { get; set; }
 		public string Color { get; set; }
 		public byte BrightnessPercent { get; set; }
-		public uint TransitionTimeSeconds { get; set; }
+		public uint TransitionTimeMilliseconds { get; set; }
 
 		public LifxControlActionData() {
 			Flags = 0;
 			DevRef = 0;
 			Color = "";
 			BrightnessPercent = 255; // 255 = unset
-			TransitionTimeSeconds = 0;
+			TransitionTimeMilliseconds = 0;
 		}
 
 		public bool HasFlag(uint flag) {
@@ -39,7 +39,7 @@ namespace HSPI_LIFX
 			writer.Write(DevRef);
 			writer.Write(Color);
 			writer.Write(BrightnessPercent);
-			writer.Write(TransitionTimeSeconds);
+			writer.Write(TransitionTimeMilliseconds);
 
 			byte[] output = stream.ToArray();
 			
@@ -65,7 +65,7 @@ namespace HSPI_LIFX
 					output.DevRef = reader.ReadInt32();
 					output.Color = reader.ReadString();
 					output.BrightnessPercent = reader.ReadByte();
-					output.TransitionTimeSeconds = reader.ReadUInt32();
+					output.TransitionTimeMilliseconds = reader.ReadUInt32();
 					break;
 				
 				default:
@@ -82,17 +82,17 @@ namespace HSPI_LIFX
 			return timeSpan.Replace('.', ':').Split(':').Length == 4;
 		}
 
-		public static int DecodeTimeSpan(string timeSpan) {
+		public static uint DecodeTimeSpan(string timeSpan) {
 			string[] parts = timeSpan.Replace('.', ':').Split(':');
-			int days = int.Parse(parts[0]);
-			int hours = int.Parse(parts[1]);
-			int minutes = int.Parse(parts[2]);
-			int seconds = int.Parse(parts[3]);
+			uint days = uint.Parse(parts[0]);
+			uint hours = uint.Parse(parts[1]);
+			uint minutes = uint.Parse(parts[2]);
+			uint seconds = uint.Parse(parts[3]);
 
 			seconds += minutes * 60;
 			seconds += hours * 60 * 60;
 			seconds += days * 60 * 60 * 24;
-			return seconds;
+			return seconds * 1000;
 		}
 	}
 }

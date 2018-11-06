@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Timers;
+using System.Web;
 using HomeSeerAPI;
 using Scheduler;
 using Scheduler.Classes;
@@ -24,6 +25,7 @@ namespace HSPI_LIFX
 			Name = "LIFX";
 			PluginIsFree = true;
 			PluginActionCount = 1;
+			PluginSupportsConfigDevice = true;
 		}
 
 		public override string InitIO(string port) {
@@ -236,7 +238,7 @@ namespace HSPI_LIFX
 				clsJQuery.jqTimeSpanPicker timePicker =
 					new clsJQuery.jqTimeSpanPicker("TransitionTime" + unique, "Transition Time", "events", true);
 				timePicker.showDays = false;
-				timePicker.defaultTimeSpan = TimeSpan.FromSeconds(data.TransitionTimeSeconds == 0 ? 1 : data.TransitionTimeSeconds);
+				timePicker.defaultTimeSpan = TimeSpan.FromMilliseconds(data.TransitionTimeMilliseconds == 0 ? TRANSITION_TIME : data.TransitionTimeMilliseconds);
 				builder.Append(timePicker.Build());
 			}
 
@@ -283,7 +285,7 @@ namespace HSPI_LIFX
 
 			string newTransitionTime = postData.Get("TransitionTime");
 			if (newTransitionTime != null && LifxControlActionData.IsValidTimeSpan(newTransitionTime)) {
-				data.TransitionTimeSeconds = (uint) LifxControlActionData.DecodeTimeSpan(newTransitionTime);
+				data.TransitionTimeMilliseconds = (uint) LifxControlActionData.DecodeTimeSpan(newTransitionTime);
 			}
 
 			string newBrightnessPct = postData.Get("BrightnessPercent");
@@ -320,12 +322,11 @@ namespace HSPI_LIFX
 				return false;
 			}
 			
-			if (actInfo.SubTANumber == LifxControlActionData.ACTION_SET_TRANSITION_TIME && data.TransitionTimeSeconds == 0) {
+			if (actInfo.SubTANumber == LifxControlActionData.ACTION_SET_TRANSITION_TIME && data.TransitionTimeMilliseconds == 0) {
 				return false;
 			}
 
-			if (data.HasFlag(LifxControlActionData.FLAG_OVERRIDE_TRANSITION_TIME) &&
-			    data.TransitionTimeSeconds == 0) {
+			if (data.HasFlag(LifxControlActionData.FLAG_OVERRIDE_TRANSITION_TIME) && data.TransitionTimeMilliseconds == 0) {
 				return false;
 			}
 			
@@ -375,7 +376,7 @@ namespace HSPI_LIFX
 					break;
 				
 				case LifxControlActionData.ACTION_SET_TRANSITION_TIME:
-					builder.Append("<span class=\"event_Txt_Selection\">" + data.TransitionTimeSeconds + " seconds</span>");
+					builder.Append("<span class=\"event_Txt_Selection\">" + (data.TransitionTimeMilliseconds / 1000) + " seconds</span>");
 					break;
 				
 				default:
@@ -385,7 +386,7 @@ namespace HSPI_LIFX
 
 			if (data.HasFlag(LifxControlActionData.FLAG_OVERRIDE_TRANSITION_TIME)) {
 				builder.Append(" over <span class=\"event_Txt_Selection\">");
-				builder.Append(data.TransitionTimeSeconds);
+				builder.Append(data.TransitionTimeMilliseconds / 1000);
 				builder.Append(" seconds</span>");
 			}
 
@@ -426,7 +427,7 @@ namespace HSPI_LIFX
 					ushort hue = (ushort) (color.Hue * ushort.MaxValue);
 					ushort sat = (ushort) (color.Saturation * ushort.MaxValue);
 					uint transitionTime = data.HasFlag(LifxControlActionData.FLAG_OVERRIDE_TRANSITION_TIME)
-						? data.TransitionTimeSeconds * 1000
+						? data.TransitionTimeMilliseconds
 						: TRANSITION_TIME;
 					ushort temperature = (ushort) ((DeviceClass) hs.GetDeviceByRef(bundle.Temperature)).get_devValue(hs);
 					byte brightPct;
@@ -471,6 +472,107 @@ namespace HSPI_LIFX
 				default:
 					return false;
 			}
+		}
+		
+		public override string ConfigDevice(int devRef, string user, int userRights, bool newDevice) {
+			Program.WriteLog("debug", "ConfigDevice called for device " + devRef + " by user " + user + " with rights " + userRights);
+
+			DeviceClass device = (DeviceClass) hs.GetDeviceByRef(devRef);
+			PlugExtraData.clsPlugExtraData extraData = device.get_PlugExtraData_Get(hs);
+			object tempObj;
+
+			StringBuilder builder = new StringBuilder();
+			builder.Append("<table width=\"100%\" cellspacing=\"0\">");
+			builder.Append("<tr><td class=\"tableheader\" colspan=\"8\">LIFX Device Settings</td></tr>");
+			
+			// Transition rate
+			tempObj = extraData.GetNamed("TransitionRateMs");
+			uint transitionTimeMs = TRANSITION_TIME;
+			if (tempObj != null) {
+				transitionTimeMs = (uint) tempObj;
+			}
+			
+			clsJQuery.jqTimeSpanPicker timeSpan =
+				new clsJQuery.jqTimeSpanPicker("LifxTransitionRate", "Transition Time", "DeviceUtility", true);
+			timeSpan.showDays = false;
+			timeSpan.defaultTimeSpan = TimeSpan.FromMilliseconds(transitionTimeMs);
+			builder.Append("<tr><td class=\"tablecell\" colspan=\"1\" align=\"left\">Transition Time:</td>");
+			builder.Append("<td class=\"tablecell\" colspan=\"7\" align=\"left\">");
+			builder.Append(timeSpan.Build());
+			builder.Append("</td></tr>");
+			
+			// Sync label
+			tempObj = extraData.GetNamed("SyncLabel");
+			bool syncLabel = false;
+			if (tempObj != null) {
+				syncLabel = (bool) tempObj;
+			}
+
+			clsJQuery.jqCheckBox checkBox =
+				new clsJQuery.jqCheckBox("LifxSyncLabel", "Sync device name", "DeviceUtility", true, true);
+			checkBox.@checked = syncLabel;
+			builder.Append("<tr><td class=\"tablecell\" colspan=\"1\" align=\"left\">Sync Device Name:</td>");
+			builder.Append("<td class=\"tablecell\" colspan=\"7\" align=\"left\">");
+			builder.Append(checkBox.Build());
+			builder.Append("<br /><hr />Updates the device's name in HS3 if it changes in the LIFX app, and vice versa.<br />Enabling this option results in slightly more LAN traffic.");
+			builder.Append("</td></tr>");
+			
+			// Sync state
+			tempObj = extraData.GetNamed("SyncState");
+			bool syncState = false;
+			if (tempObj != null) {
+				syncState = (bool) tempObj;
+			}
+
+			checkBox = new clsJQuery.jqCheckBox("LifxSyncState", "Sync light state", "DeviceUtility", true, true);
+			checkBox.@checked = syncState;
+			builder.Append("<tr><td class=\"tablecell\" colspan=\"1\" align=\"left\">Sync Light State:</td>");
+			builder.Append("<td class=\"tablecell\" colspan=\"7\" align=\"left\">");
+			builder.Append(checkBox.Build());
+			builder.Append("<br /><hr />Updates the light's state in HS3 if it changes in the LIFX app. If enabled, events will be triggered based on light state changes via the LIFX app.<br />Enabling this option results in slightly more LAN traffic.");
+			builder.Append("</td></tr>");
+
+			builder.Append("</table>");
+
+			clsJQuery.jqButton button = new clsJQuery.jqButton("LifxDone", "Done", "DeviceUtility", true);
+			builder.Append("<br /><br />");
+			builder.Append(button.Build());
+			return builder.ToString();
+		}
+
+		public override Enums.ConfigDevicePostReturn ConfigDevicePost(int devRef, string data, string user,
+			int userRights) {
+
+			Program.WriteLog("debug",
+				"ConfigDevicePost called by " + user + " with rights " + userRights + " for device " + devRef +
+				" with data " + data);
+
+			DeviceClass device = (DeviceClass) hs.GetDeviceByRef(devRef);
+			PlugExtraData.clsPlugExtraData extraData = device.get_PlugExtraData_Get(hs);
+			
+			NameValueCollection postData = HttpUtility.ParseQueryString(data);
+			string val;
+
+			if ((val = postData.Get("LifxTransitionRate")) != null && LifxControlActionData.IsValidTimeSpan(val)) {
+				extraData.RemoveNamed("TransitionRateMs");
+				extraData.AddNamed("TransitionRateMs", LifxControlActionData.DecodeTimeSpan(val));
+			}
+
+			if ((val = postData.Get("LifxSyncLabel")) != null) {
+				extraData.RemoveNamed("SyncLabel");
+				extraData.AddNamed("SyncLabel", val == "checked");
+			}
+
+			if ((val = postData.Get("LifxSyncState")) != null) {
+				extraData.RemoveNamed("SyncState");
+				extraData.AddNamed("SyncState", val == "checked");
+			}
+
+			device.set_PlugExtraData_Set(hs, extraData);
+
+			return postData.Get("LifxDone") != null
+				? Enums.ConfigDevicePostReturn.DoneAndSave
+				: Enums.ConfigDevicePostReturn.DoneAndCancelAndStay;
 		}
 
 		private void processDiscoveredDevice(LifxClient.Device lifxDevice) {
