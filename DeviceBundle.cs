@@ -173,7 +173,8 @@ namespace HSPI_LIFX
 			
 			device.MISC_Set(hs, Enums.dvMISC.SHOW_VALUES);
 			device.MISC_Set(hs, Enums.dvMISC.IS_LIGHT);
-
+			
+			plugin.IgnoreNextDeviceControl(hsRef);
 			hs.SetDeviceValueByRef(hsRef, 0, false);
 			
 			Brightness = hsRef;
@@ -239,6 +240,7 @@ namespace HSPI_LIFX
 			
 			device.MISC_Set(hs, Enums.dvMISC.SHOW_VALUES);
 
+			plugin.IgnoreNextDeviceControl(hsRef);
 			hs.SetDeviceValueByRef(hsRef, 3200, false);
 			
 			Temperature = hsRef;

@@ -19,6 +19,7 @@ namespace HSPI_LIFX
 		private LifxClient.Client lifxClient;
 		private List<DeviceDescriptor> knownDeviceCache;
 		private readonly List<DeviceDescriptor> devicesToPoll;
+		private readonly Dictionary<int, Timer> ignoreControls;
 		private Timer pollTimer;
 		
 		private const uint TRANSITION_TIME = 1000;
@@ -32,6 +33,7 @@ namespace HSPI_LIFX
 			PluginSupportsConfigDevice = true;
 			
 			devicesToPoll = new List<DeviceDescriptor>();
+			ignoreControls = new Dictionary<int, Timer>();
 		}
 
 		public override string InitIO(string port) {
@@ -70,10 +72,22 @@ namespace HSPI_LIFX
 			// TODO inspect all the commands at once
 
 			// Reset the poll timer so we don't run the risk of race conditions
+			pollTimer.Stop();
 			pollTimer.Start();
 			
 			foreach (CAPI.CAPIControl ctrl in colSend) {
+				if (ctrl == null) {
+					continue;	
+				}
+				
 				int devRef = ctrl.Ref;
+				Timer ignoreTimer;
+				if (ignoreControls.TryGetValue(devRef, out ignoreTimer)) {
+					ignoreTimer.Dispose();
+					ignoreControls.Remove(devRef);
+					continue;
+				}
+				
 				int controlValue = (int) ctrl.ControlValue;
 				string controlString = ctrl.ControlString;
 				
@@ -117,12 +131,15 @@ namespace HSPI_LIFX
 
 				if (subType == SubDeviceType.Brightness && controlValue == 0) {
 					lifxDevice.SetPowered(false, transitionTime);
+					IgnoreNextDeviceControl(devRef);
 					hs.SetDeviceValueByRef(devRef, controlValue, true);
 				} else if (subType == SubDeviceType.Brightness && controlValue == 255) {
 					lifxDevice.SetPowered(true, transitionTime);
 					Task.Run(async () => {
 						LifxClient.LightStatus status = await lifxDevice.QueryLightStatus();
-						hs.SetDeviceValueByRef(devRef, (int) ((double) status.Brightness / ushort.MaxValue * 100), true);
+						double newBrightness = Math.Min(Math.Round(((double) status.Brightness / ushort.MaxValue) * 100), 99);
+						IgnoreNextDeviceControl(devRef);
+						hs.SetDeviceValueByRef(devRef, newBrightness, true);
 					});
 				} else {
 					Task.Run(async () => {
@@ -137,7 +154,7 @@ namespace HSPI_LIFX
 								color = ColorConvert.rgbToHsv(
 									ColorConvert.stringToRgb(hs.DeviceString(bundle.Color))
 								);
-								controlValue = Math.Min(controlValue, 100);
+								controlValue = Math.Min(controlValue, 99);
 								brightness = (ushort) ((double) controlValue / 100.0 * ushort.MaxValue);
 								break;
 							
@@ -166,9 +183,10 @@ namespace HSPI_LIFX
 							lifxDevice.SetColor(hue, saturation, brightness, temperature, transitionTime);
 						}
 						
-						if (!String.IsNullOrEmpty(controlString)) {
+						if (!string.IsNullOrEmpty(controlString)) {
 							hs.SetDeviceString(devRef, controlString, true);
 						} else {
+							IgnoreNextDeviceControl(devRef);
 							hs.SetDeviceValueByRef(devRef, controlValue, true);
 						}
 					});
@@ -438,6 +456,7 @@ namespace HSPI_LIFX
 			}
 
 			// Reset the poll timer so we don't run the risk of race conditions
+			pollTimer.Stop();
 			pollTimer.Start();
 			
 			LifxControlActionData data = LifxControlActionData.Unserialize(actInfo.DataIn);
@@ -497,11 +516,13 @@ namespace HSPI_LIFX
 					Task.Run(async () => {
 						if (brightness == 0) {
 							await lifxDevice.SetPoweredWithAck(false, transitionTime);
+							LifxClient.LightStatus status = await lifxDevice.QueryLightStatus();
 							await Task.Delay((int) transitionTime);
-							lifxDevice.SetColor(hue, sat, brightness, temperature, 0);
+							lifxDevice.SetColor(hue, sat, status.Brightness, temperature, 0);
 
 							hs.SetDeviceString(bundle.Color, data.Color, true);
 							if (actInfo.SubTANumber == LifxControlActionData.ACTION_SET_COLOR_AND_BRIGHTNESS) {
+								IgnoreNextDeviceControl(bundle.Brightness);
 								hs.SetDeviceValueByRef(bundle.Brightness, data.BrightnessPercent, true);
 							}
 						} else {
@@ -518,6 +539,7 @@ namespace HSPI_LIFX
 
 							hs.SetDeviceString(bundle.Color, data.Color, true);
 							if (actInfo.SubTANumber == LifxControlActionData.ACTION_SET_COLOR_AND_BRIGHTNESS) {
+								IgnoreNextDeviceControl(bundle.Brightness);
 								hs.SetDeviceValueByRef(bundle.Brightness, data.BrightnessPercent, true);
 							}
 						}
@@ -811,6 +833,7 @@ namespace HSPI_LIFX
 							Program.WriteLog("info",
 								"Updating brightness in HS3 for device " + bundle.Root + "; it is " + actualBright +
 								" but HS3 believes it is " + hsBright);
+							IgnoreNextDeviceControl(bundle.Brightness);
 							hs.SetDeviceValueByRef(bundle.Brightness, actualBright, true);
 						} else {
 							Program.WriteLog("silly", "Brightness in HS3 for device " + bundle.Root + " matches: " + actualBright + " vs " + hsBright);
@@ -832,6 +855,7 @@ namespace HSPI_LIFX
 							Program.WriteLog("info",
 								"Updating temperature in HS3 for device " + bundle.Root + "; it is " + status.Kelvin +
 								" but HS3 believes it is " + hsTemp);
+							IgnoreNextDeviceControl(bundle.Temperature);
 							hs.SetDeviceValueByRef(bundle.Temperature, status.Kelvin, true);
 						} else {
 							Program.WriteLog("silly", "Temp in HS3 for device " + bundle.Root + " matches: " + status.Kelvin + " vs " + hsTemp);							
@@ -839,6 +863,23 @@ namespace HSPI_LIFX
 					}
 				});
 			}
+		}
+		
+		public void IgnoreNextDeviceControl(int devRef) {
+			if (ignoreControls.ContainsKey(devRef)) {
+				return;
+			}
+
+			Timer timer = new Timer(1000);
+			timer.AutoReset = false;
+			timer.Elapsed += (object src, ElapsedEventArgs args) => {
+				if (ignoreControls.ContainsKey(devRef)) {
+					ignoreControls.Remove(devRef);
+				}
+			};
+			timer.Start();
+
+			ignoreControls.Add(devRef, timer);
 		}
 	}
 
