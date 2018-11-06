@@ -644,14 +644,28 @@ namespace HSPI_LIFX
 			return builder.ToString();
 		}
 
-		public override Enums.ConfigDevicePostReturn ConfigDevicePost(int devRef, string data, string user,
-			int userRights) {
-
+		public override Enums.ConfigDevicePostReturn ConfigDevicePost(int devRef, string data, string user, int userRights) {
 			Program.WriteLog("debug",
 				"ConfigDevicePost called by " + user + " with rights " + userRights + " for device " + devRef +
 				" with data " + data);
 
 			DeviceClass device = (DeviceClass) hs.GetDeviceByRef(devRef);
+			if (device.get_Relationship(hs) != Enums.eRelationship.Parent_Root) {
+				// find the parent
+				DeviceClass parentDevice = null;
+				foreach (int associatedRef in device.get_AssociatedDevices(hs)) {
+					parentDevice = (DeviceClass) hs.GetDeviceByRef(associatedRef);
+					if (parentDevice.get_Relationship(hs) == Enums.eRelationship.Parent_Root) {
+						device = parentDevice;
+						devRef = associatedRef;
+						break;
+					}
+				}
+
+				if (device != parentDevice) {
+					throw new Exception("Error finding parent device.");
+				}
+			}
 			PlugExtraData.clsPlugExtraData extraData = device.get_PlugExtraData_Get(hs);
 			
 			NameValueCollection postData = HttpUtility.ParseQueryString(data);
