@@ -836,7 +836,7 @@ namespace HSPI_LIFX
 							IgnoreNextDeviceControl(bundle.Brightness);
 							hs.SetDeviceValueByRef(bundle.Brightness, actualBright, true);
 						} else {
-							Program.WriteLog("silly", "Brightness in HS3 for device " + bundle.Root + " matches: " + actualBright + " vs " + hsBright);
+							Program.WriteLog("console", "Brightness in HS3 for device " + bundle.Root + " matches: " + actualBright + " vs " + hsBright);
 						}
 
 						string actualColor = ColorConvert.hsvToRgb(hsv).ToString().ToLower();
@@ -847,7 +847,7 @@ namespace HSPI_LIFX
 								" but HS3 believes it is " + hsColor);
 							hs.SetDeviceString(bundle.Color, actualColor, true);
 						} else {
-							Program.WriteLog("silly", "Color in HS3 for device " + bundle.Root + " matches: " + actualColor + " vs " + hsColor);
+							Program.WriteLog("console", "Color in HS3 for device " + bundle.Root + " matches: " + actualColor + " vs " + hsColor);
 						}
 
 						int hsTemp = (int) devTemp.get_devValue(hs);
@@ -858,7 +858,7 @@ namespace HSPI_LIFX
 							IgnoreNextDeviceControl(bundle.Temperature);
 							hs.SetDeviceValueByRef(bundle.Temperature, status.Kelvin, true);
 						} else {
-							Program.WriteLog("silly", "Temp in HS3 for device " + bundle.Root + " matches: " + status.Kelvin + " vs " + hsTemp);							
+							Program.WriteLog("console", "Temp in HS3 for device " + bundle.Root + " matches: " + status.Kelvin + " vs " + hsTemp);							
 						}
 					}
 				});
