@@ -186,7 +186,7 @@ namespace LifxClient
 				case MessageType.StateService:
 					var service = reader.ReadByte();
 					var port = reader.ReadUInt32();
-					//Debug.WriteLine("Got service " + service + " on port " + port + " from " + remote + " address " + frame.Target.ToString("X"));
+					Debug.WriteLine("Got service " + service + " on port " + port + " from " + remote + " address " + frame.Target.ToString("X"));
 					if (service == 1) {
 						// UDP
 						Device device;

@@ -482,7 +482,7 @@ namespace HSPI_LIFX
 					LifxClient.Device lifxDevice = lifxClient.GetDeviceByAddress(hs3AddressToLifxAddress(bundle.Address));
 					if (lifxDevice == null) {
 						Program.WriteLog("error",
-							"No LIFX device found on the network for address " + bundle.Address + "for event " +
+							"No LIFX device found on the network for address " + bundle.Address + " for event " +
 							actInfo.evRef);
 						return false;
 					}
