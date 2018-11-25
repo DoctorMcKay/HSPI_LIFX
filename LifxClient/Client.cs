@@ -172,7 +172,7 @@ namespace LifxClient
 				handleFrame(frame, data.RemoteEndPoint);
 			}
 			catch (Exception ex) {
-				Debug.WriteLine("Malformed packet: " + ex.Message);
+				Debug.WriteLine("Malformed packet from " + data.RemoteEndPoint.Address + ":" + data.RemoteEndPoint.Port + ": " + ex.Message);
 			}
 			
 			receiveUdpPacket();
