@@ -27,7 +27,7 @@ namespace HSPI_LIFX
 		private const ushort DEVICE_STATUS_POLL_FREQUENCY = 10000;
 		
 		public HSPI() {
-			Name = "LIFX";
+			Name = "HS3LIFX";
 			PluginIsFree = true;
 			PluginActionCount = 1;
 			PluginSupportsConfigDevice = true;
