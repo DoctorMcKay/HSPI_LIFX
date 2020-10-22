@@ -25,10 +25,11 @@ namespace LifxClient
 		}
 
 		public async Task<DeviceVersion> GetVersion() {
-			var resp = await client.sendPacketWithResponse(IPAddress, new Frame {
+			var resp = await client.sendPacketWithRetry(IPAddress, new Frame {
 				Payload = new byte[] { },
 				Target = Address,
-				Type = MessageType.GetVersion
+				Type = MessageType.GetVersion,
+				ResponseRequired = true
 			});
 
 			if (resp.Type != MessageType.StateVersion) {
@@ -53,10 +54,11 @@ namespace LifxClient
 		/// <summary> Query this device's light status. </summary>
 		/// <returns>LightStatus</returns>
 		public async Task<LightStatus> QueryLightStatus() {
-			var resp = await client.sendPacketWithResponse(IPAddress, new Frame {
+			var resp = await client.sendPacketWithRetry(IPAddress, new Frame {
 				Payload = new byte[] { },
 				Target = Address,
-				Type = MessageType.Light_Get
+				Type = MessageType.Light_Get,
+				ResponseRequired = true
 			});
 
 			if (resp.Type != MessageType.Light_State) {
@@ -103,7 +105,7 @@ namespace LifxClient
 		public async Task SetPoweredWithAck(bool powered, uint duration) {
 			Frame frame = buildSetPoweredFrame(powered, duration);
 			frame.AckRequired = true;
-			await client.sendPacketWithResponse(IPAddress, frame);
+			await client.sendPacketWithRetry(IPAddress, frame);
 		}
 		
 #endregion
@@ -158,7 +160,7 @@ namespace LifxClient
 		public async Task SetColorWithAck(ushort hue, ushort saturation, ushort brightness, ushort kelvin, uint duration) {
 			Frame frame = buildSetColorFrame(hue, saturation, brightness, kelvin, duration);
 			frame.AckRequired = true;
-			await client.sendPacketWithResponse(IPAddress, frame);
+			await client.sendPacketWithRetry(IPAddress, frame);
 		}
 
 		public async Task<ColorZoneState> GetExtendedColorZones() {
@@ -169,7 +171,7 @@ namespace LifxClient
 				Payload = new byte[] { }
 			};
 			
-			Frame resp = await client.sendPacketWithResponse(IPAddress, frame);
+			Frame resp = await client.sendPacketWithRetry(IPAddress, frame);
 			return decodeMultiZoneStateFrame(resp);
 		}
 
@@ -180,7 +182,7 @@ namespace LifxClient
 		public async Task SetExtendedColorZonesWithAck(uint duration, ushort index, HSBK[] colors) {
 			Frame frame = buildSetExtendedColorZonesFrame(duration, index, colors);
 			frame.AckRequired = true;
-			await client.sendPacketWithResponse(IPAddress, frame);
+			await client.sendPacketWithRetry(IPAddress, frame);
 		}
 
 		private Frame buildSetExtendedColorZonesFrame(uint duration, ushort index, HSBK[] colors) {

@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.InteropServices.WindowsRuntime;
 using System.Threading.Tasks;
 using System.Timers;
 
@@ -116,6 +117,22 @@ namespace LifxClient
 			});
 		}
 
+		internal async Task<Frame> sendPacketWithRetry(IPEndPoint address, Frame frame, byte retryCount = 0) {
+			if (!frame.AckRequired && !frame.ResponseRequired) {
+				frame.AckRequired = true;
+			}
+
+			try {
+				return await sendPacketWithResponse(address, frame);
+			} catch (Exception ex) {
+				if (retryCount >= 4) {
+					throw ex;
+				}
+
+				return await sendPacketWithRetry(address, frame, (byte) (retryCount + 1));
+			}
+		}
+
 		internal async Task<Frame> sendPacketWithResponse(IPEndPoint address, Frame frame) {
 			sendPacket(address, frame);
 			RequestId reqId = new RequestId {
@@ -124,7 +141,7 @@ namespace LifxClient
 			};
 
 			var attempts = 0;
-			while (!responses.ContainsKey(reqId) && ++attempts < 100) {
+			while (!responses.ContainsKey(reqId) && ++attempts < 50) {
 				await Task.Delay(100);				
 			}
 
