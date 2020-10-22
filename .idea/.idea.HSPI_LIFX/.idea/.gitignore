@@ -1,0 +1,13 @@
+# Default ignored files
+/shelf/
+/workspace.xml
+# Rider ignored files
+/projectSettingsUpdater.xml
+/modules.xml
+/contentModel.xml
+/.idea.HSPI_LIFX.iml
+# Datasource local storage ignored files
+/../../../../../../../../../:\Users\Alex\Repos\HomeSeer Plugins\HSPI_LIFX\.idea\.idea.HSPI_LIFX\.idea/dataSources/
+/dataSources.local.xml
+# Editor-based HTTP Client requests
+/httpRequests/
