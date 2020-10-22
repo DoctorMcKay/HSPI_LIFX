@@ -2,12 +2,15 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Globalization;
+using System.IO;
 using System.Linq;
+using System.Runtime.Serialization.Formatters.Binary;
 using System.Text;
 using System.Threading.Tasks;
 using System.Timers;
 using System.Web;
 using HomeSeerAPI;
+using LifxClient;
 using Scheduler;
 using Scheduler.Classes;
 
@@ -16,7 +19,7 @@ namespace HSPI_LIFX
 	// ReSharper disable once InconsistentNaming
 	public class HSPI : HspiBase
 	{
-		private LifxClient.Client lifxClient;
+		private Client lifxClient;
 		private List<DeviceDescriptor> knownDeviceCache;
 		private readonly List<DeviceDescriptor> devicesToPoll;
 		private readonly Dictionary<int, Timer> ignoreControls;
@@ -51,9 +54,9 @@ namespace HSPI_LIFX
 
 			Program.WriteLog("console", "Devices to poll list built");
 
-			lifxClient = new LifxClient.Client {DiscoveryFrequency = DISCOVERY_FREQUENCY};
+			lifxClient = new Client {DiscoveryFrequency = DISCOVERY_FREQUENCY};
 			lifxClient.StartDiscovery();
-			lifxClient.DeviceDiscovered += (object source, LifxClient.DeviceEventArgs args) => {
+			lifxClient.DeviceDiscovered += (object source, DeviceEventArgs args) => {
 				processDiscoveredDevice(args.Device);
 			};
 			
@@ -111,7 +114,7 @@ namespace HSPI_LIFX
 					continue;
 				}
 
-				LifxClient.Device lifxDevice = lifxClient.GetDeviceByAddress(hs3AddressToLifxAddress(addressParts[0]));
+				Device lifxDevice = lifxClient.GetDeviceByAddress(hs3AddressToLifxAddress(addressParts[0]));
 				if (lifxDevice == null) {
 					Program.WriteLog("error",
 						"No known LIFX device for ref " + devRef + " (" + addressParts[0] + ")");
@@ -136,14 +139,14 @@ namespace HSPI_LIFX
 				} else if (subType == SubDeviceType.Brightness && controlValue == 255) {
 					lifxDevice.SetPowered(true, transitionTime);
 					Task.Run(async () => {
-						LifxClient.LightStatus status = await lifxDevice.QueryLightStatus();
+						LightStatus status = await lifxDevice.QueryLightStatus();
 						double newBrightness = Math.Min(Math.Round(((double) status.Brightness / ushort.MaxValue) * 100), 99);
 						IgnoreNextDeviceControl(devRef);
 						hs.SetDeviceValueByRef(devRef, newBrightness, true);
 					});
 				} else {
 					Task.Run(async () => {
-						LifxClient.LightStatus status = await lifxDevice.QueryLightStatus();
+						LightStatus status = await lifxDevice.QueryLightStatus();
 						HSV color = new HSV {Hue = status.Hue, Saturation = status.Saturation};
 						ushort temperature = status.Kelvin;
 						ushort brightness = status.Brightness;
@@ -220,6 +223,8 @@ namespace HSPI_LIFX
 				actInfo.SubTANumber == LifxControlActionData.ACTION_SET_COLOR);
 			actionSelector.AddItem("Set color and brightness...", LifxControlActionData.ACTION_SET_COLOR_AND_BRIGHTNESS.ToString(),
 				actInfo.SubTANumber == LifxControlActionData.ACTION_SET_COLOR_AND_BRIGHTNESS);
+			actionSelector.AddItem("Recall Multi-Zone Theme...", LifxControlActionData.ACTION_RECALL_MZ_THEME.ToString(),
+				actInfo.SubTANumber == LifxControlActionData.ACTION_RECALL_MZ_THEME);
 			actionSelector.AddItem("Set transition time...", LifxControlActionData.ACTION_SET_TRANSITION_TIME.ToString(),
 				actInfo.SubTANumber == LifxControlActionData.ACTION_SET_TRANSITION_TIME);
 			builder.Append(actionSelector.Build());
@@ -236,6 +241,8 @@ namespace HSPI_LIFX
 			}
 
 			if (data.DevRef != 0) {
+				clsJQuery.jqCheckBox overrideTransitionBox;
+				
 				switch (actInfo.SubTANumber) {
 					case LifxControlActionData.ACTION_UNSELECTED:
 						break;
@@ -269,7 +276,24 @@ namespace HSPI_LIFX
 						builder.Append(colorSaveBtn.Build());
 						builder.Append("<br />Due to an HS3 bug, you may need to press Save Color to save this event.<br />");
 
-						clsJQuery.jqCheckBox overrideTransitionBox =
+						overrideTransitionBox = new clsJQuery.jqCheckBox("OverrideTransitionTime" + unique, "Override transition time",
+								"Events", true, true);
+						overrideTransitionBox.@checked =
+							data.HasFlag(LifxControlActionData.FLAG_OVERRIDE_TRANSITION_TIME);
+						builder.Append(overrideTransitionBox.Build());
+						
+						break;
+					
+					case LifxControlActionData.ACTION_RECALL_MZ_THEME:
+						clsJQuery.jqDropList themePicker = new clsJQuery.jqDropList("Color" + unique, "events", true);
+						themePicker.AddItem("(Choose A Theme)", "", data.Color == "");
+						foreach (string name in getMultizoneThemes(((DeviceClass) hs.GetDeviceByRef(data.DevRef)).get_PlugExtraData_Get(hs)).Keys) {
+							themePicker.AddItem(name, name, data.Color == name);
+						}
+
+						builder.Append(themePicker.Build());
+						
+						overrideTransitionBox =
 							new clsJQuery.jqCheckBox("OverrideTransitionTime" + unique, "Override transition time",
 								"Events", true, true);
 						overrideTransitionBox.@checked =
@@ -377,6 +401,10 @@ namespace HSPI_LIFX
 			    (data.Color.Length != 6 || data.BrightnessPercent == 255)) {
 				return false;
 			}
+
+			if (actInfo.SubTANumber == LifxControlActionData.ACTION_RECALL_MZ_THEME && string.IsNullOrEmpty(data.Color)) {
+				return false;
+			}
 			
 			if (actInfo.SubTANumber == LifxControlActionData.ACTION_SET_TRANSITION_TIME && data.TransitionTimeMilliseconds == 0) {
 				return false;
@@ -404,6 +432,10 @@ namespace HSPI_LIFX
 					builder.Append("<span class=\"event_Txt_Selection\">Color</span>");
 					break;
 				
+				case LifxControlActionData.ACTION_RECALL_MZ_THEME:
+					builder.Append("<span class=\"event_Txt_Selection\">Multi-Zone Theme</span>");
+					break;
+				
 				case LifxControlActionData.ACTION_SET_TRANSITION_TIME:
 					builder.Append("<span class=\"event_Txt_Selection\">Transition Time</span>");
 					break;
@@ -429,6 +461,10 @@ namespace HSPI_LIFX
 						builder.Append(" with brightness <span class=\"event_Txt_Selection\">" +
 						               data.BrightnessPercent + "%</span>");
 					}
+					break;
+				
+				case LifxControlActionData.ACTION_RECALL_MZ_THEME:
+					builder.Append("<span class=\"event_Txt_Selection\">" + data.Color + "</span>");
 					break;
 				
 				case LifxControlActionData.ACTION_SET_TRANSITION_TIME:
@@ -464,6 +500,8 @@ namespace HSPI_LIFX
 			int rootRef;
 			DeviceClass device;
 			PlugExtraData.clsPlugExtraData extraData;
+			Device lifxDevice;
+			uint transitionTime;
 
 			switch (actInfo.SubTANumber) {
 				case LifxControlActionData.ACTION_SET_COLOR:
@@ -479,7 +517,7 @@ namespace HSPI_LIFX
 						return false;
 					}
 
-					LifxClient.Device lifxDevice = lifxClient.GetDeviceByAddress(hs3AddressToLifxAddress(bundle.Address));
+					lifxDevice = lifxClient.GetDeviceByAddress(hs3AddressToLifxAddress(bundle.Address));
 					if (lifxDevice == null) {
 						Program.WriteLog("error",
 							"No LIFX device found on the network for address " + bundle.Address + " for event " +
@@ -487,7 +525,7 @@ namespace HSPI_LIFX
 						return false;
 					}
 
-					uint transitionTime = TRANSITION_TIME;
+					transitionTime = TRANSITION_TIME;
 					extraData = device.get_PlugExtraData_Get(hs);
 					try {
 						object tempObj = extraData.GetNamed("TransitionRateMs");
@@ -516,7 +554,7 @@ namespace HSPI_LIFX
 					Task.Run(async () => {
 						if (brightness == 0) {
 							await lifxDevice.SetPoweredWithAck(false, transitionTime);
-							LifxClient.LightStatus status = await lifxDevice.QueryLightStatus();
+							LightStatus status = await lifxDevice.QueryLightStatus();
 							await Task.Delay((int) transitionTime);
 							lifxDevice.SetColor(hue, sat, status.Brightness, temperature, 0);
 
@@ -527,7 +565,7 @@ namespace HSPI_LIFX
 							}
 						} else {
 							// Brightness is > 0, so turn it on if necessary
-							LifxClient.LightStatus status = await lifxDevice.QueryLightStatus();
+							LightStatus status = await lifxDevice.QueryLightStatus();
 							if (!status.Powered) {
 								// Set color first
 								await lifxDevice.SetColorWithAck(hue, sat, brightness, temperature, 0);
@@ -547,6 +585,36 @@ namespace HSPI_LIFX
 					
 					return true;
 				
+				case LifxControlActionData.ACTION_RECALL_MZ_THEME:
+					rootRef = data.DevRef;
+					device = (DeviceClass) hs.GetDeviceByRef(rootRef);
+					extraData = device.get_PlugExtraData_Get(hs);
+
+					Dictionary<string, MultiZoneTheme> themes = getMultizoneThemes(extraData);
+					if (!themes.ContainsKey(data.Color)) {
+						return false;
+					}
+					
+					transitionTime = TRANSITION_TIME;
+					try {
+						object tempObj = extraData.GetNamed("TransitionRateMs");
+						if (tempObj != null) {
+							transitionTime = (uint) tempObj;
+						}
+					}
+					catch (Exception) {}
+
+					if (data.HasFlag(LifxControlActionData.FLAG_OVERRIDE_TRANSITION_TIME)) {
+						transitionTime = data.TransitionTimeMilliseconds;
+					}
+
+					MultiZoneTheme theme = themes[data.Color];
+					string[] addressParts = device.get_Address(hs).Split('-');
+					lifxDevice = lifxClient.GetDeviceByAddress(hs3AddressToLifxAddress(addressParts[0]));
+					lifxDevice.SetPowered(true, transitionTime);
+					lifxDevice.SetExtendedColorZones(transitionTime, theme.State.Index, theme.State.Colors);
+					return true;
+
 				case LifxControlActionData.ACTION_SET_TRANSITION_TIME:
 					rootRef = data.DevRef;
 					device = (DeviceClass) hs.GetDeviceByRef(rootRef);
@@ -637,6 +705,35 @@ namespace HSPI_LIFX
 			builder.Append("</td></tr>");
 
 			builder.Append("</table>");
+			
+			// Multi-zone saved stuff
+			builder.Append("<table width=\"100%\" cellspacing=\"0\">");
+			builder.Append("<tr><td class=\"tableheader\" colspan=\"8\">Multi-Zone Themes (supported LIFX devices only)</td></tr>");
+			
+			clsJQuery.jqDropList dropList = new clsJQuery.jqDropList("LifxDeleteMultizone", "DeviceUtility", true);
+			dropList.AddItem("(Select a Theme to Delete)", "", true);
+			foreach (string name in getMultizoneThemes(extraData).Keys) {
+				dropList.AddItem(name, name, false);
+			}
+
+			builder.Append("<tr><td class=\"tablecell\" colspan=\"1\" align=\"left\">Delete Theme</td>");
+			builder.Append("<td class=\"tablecell\" colspan=\"7\" align=\"left\">");
+			if (dropList.items.Count > 0) {
+				builder.Append(dropList.Build());
+			} else {
+				builder.Append("-- NO MULTIZONE THEMES --");
+			}
+			builder.Append("</td></tr>");
+
+			builder.Append("<tr><td class=\"tablecell\" colspan=\"1\" align=\"left\">Save MultiZone Theme</td>");
+			builder.Append("<td class=\"tablecell\" colspan=\"7\" align=\"left\">");
+			
+			clsJQuery.jqTextBox textBox = new clsJQuery.jqTextBox("LifxSaveMZName", "text", "", "DeviceUtility", 60, true);
+			builder.Append(textBox.Build());
+			builder.Append("<br />Type the name you desire for your MZ theme. The current device configuration will be saved under that name.");
+			builder.Append("</td></tr>");
+			
+			builder.Append("</table>");
 
 			clsJQuery.jqButton button = new clsJQuery.jqButton("LifxDone", "Done", "DeviceUtility", true);
 			builder.Append("<br /><br />");
@@ -695,12 +792,61 @@ namespace HSPI_LIFX
 				devicesToPoll.Remove(descriptor);
 			}
 
+			if ((val = postData.Get("LifxSaveMZName")) != null && val != "") {
+				Program.WriteLog("info", $"Saving multizone theme {val}");
+				string[] addressParts = device.get_Address(hs).Split('-');
+				Device lifxDevice = lifxClient.GetDeviceByAddress(hs3AddressToLifxAddress(addressParts[0]));
+				if (lifxDevice == null) {
+					Program.WriteLog("error", $"No known LIFX device for ref {devRef} trying to save MZ");
+					return Enums.ConfigDevicePostReturn.DoneAndCancelAndStay;
+				}
+
+				try {
+					Task<ColorZoneState> task = lifxDevice.GetExtendedColorZones();
+					task.Wait();
+					BinaryFormatter formatter = new BinaryFormatter();
+					MemoryStream stream = new MemoryStream();
+					formatter.Serialize(stream, new MultiZoneTheme {Name = val, State = task.Result});
+					
+					extraData.AddNamed("mzt_" + val.ToLower(), stream.GetBuffer());
+					device.set_PlugExtraData_Set(hs, extraData);
+
+					stream.Dispose();
+					return Enums.ConfigDevicePostReturn.DoneAndSave;
+				} catch (Exception ex) {
+					Program.WriteLog("error", $"Cannot save MZ: {ex.Message}");
+					return Enums.ConfigDevicePostReturn.DoneAndCancelAndStay;
+				}
+			}
+
+			if ((val = postData.Get("LifxDeleteMultizone")) != null && val != "") {
+				Program.WriteLog("info", $"Deleting multizone theme {val}");
+				extraData.RemoveNamed("mzt_" + val.ToLower());
+				device.set_PlugExtraData_Set(hs, extraData);
+				return Enums.ConfigDevicePostReturn.DoneAndSave;
+			}
+
 			return postData.Get("LifxDone") != null
 				? Enums.ConfigDevicePostReturn.DoneAndSave
 				: Enums.ConfigDevicePostReturn.DoneAndCancelAndStay;
 		}
 
-		private void processDiscoveredDevice(LifxClient.Device lifxDevice) {
+		private Dictionary<string, MultiZoneTheme> getMultizoneThemes(PlugExtraData.clsPlugExtraData extraData) {
+			Dictionary<string, MultiZoneTheme> output = new Dictionary<string, MultiZoneTheme>();
+			foreach (string key in extraData.GetNamedKeys()) {
+				if (key.StartsWith("mzt_")) {
+					BinaryFormatter formatter = new BinaryFormatter();
+					MemoryStream stream = new MemoryStream((byte[]) extraData.GetNamed(key));
+					MultiZoneTheme theme = (MultiZoneTheme) formatter.Deserialize(stream);
+					output.Add(theme.Name, theme);
+					stream.Dispose();
+				}
+			}
+
+			return output;
+		}
+
+		private void processDiscoveredDevice(Device lifxDevice) {
 			string hs3Addr = lifxAddressToHs3Address(lifxDevice.Address);
 			Program.WriteLog("debug", "Discovered LIFX device " + hs3Addr + " at " + lifxDevice.IPAddress);
 			
@@ -717,6 +863,28 @@ namespace HSPI_LIFX
 				Program.WriteLog("info", "Creating HS3 devices for LIFX device " + hs3Addr + " (" + lifxDevice.LastKnownStatus.Label + ")");
 				bundle.CreateDevices(lifxDevice.LastKnownStatus.Label);
 				updateKnownDeviceCache();
+			}
+
+			if (hs3Addr == "D073D528D1A5") {
+				/*lifxDevice.GetExtendedColorZones().ContinueWith((task) => {
+					//Console.WriteLine(task.Result.ToString());
+					BinaryFormatter formatter = new BinaryFormatter();
+					MemoryStream stream = new MemoryStream();
+					formatter.Serialize(stream, task.Result);
+					Console.WriteLine(task.Result.ToString());
+					Console.WriteLine(Convert.ToBase64String(stream.GetBuffer()));
+					stream.Dispose();
+				});*/
+
+				string msg =
+					"AAEAAAD/////AQAAAAAAAAAMAgAAAEhMaWZ4Q2xpZW50LCBWZXJzaW9uPTEuMC43NTk5LjQyMzYwLCBDdWx0dXJlPW5ldXRyYWwsIFB1YmxpY0tleVRva2VuPW51bGwFAQAAABlMaWZ4Q2xpZW50LkNvbG9yWm9uZVN0YXRlBAAAAAVDb3VudAVJbmRleAtDb2xvcnNDb3VudAZDb2xvcnMAAAAEDg4OEUxpZnhDbGllbnQuSFNCS1tdAgAAAAIAAAAYAAAAGAAJAwAAAAcDAAAAAAEAAAAYAAAABA9MaWZ4Q2xpZW50LkhTQksCAAAACQQAAAAJBQAAAAkGAAAACQcAAAAJCAAAAAkJAAAACQoAAAAJCwAAAAkMAAAACQ0AAAAJDgAAAAkPAAAACRAAAAAJEQAAAAkSAAAACRMAAAAJFAAAAAkVAAAACRYAAAAJFwAAAAkYAAAACRkAAAAJGgAAAAkbAAAABQQAAAAPTGlmeENsaWVudC5IU0JLBAAAAANIdWUKU2F0dXJhdGlvbgpCcmlnaHRuZXNzBktlbHZpbgAAAAAODg4OAgAAAAAA/////6APAQUAAAAEAAAAAAD/////oA8BBgAAAAQAAAAAAP////+gDwEHAAAABAAAAAAA/////6APAQgAAAAEAAAAAAD/////oA8BCQAAAAQAAAAAAP////+gDwEKAAAABAAAAAAA/////6APAQsAAAAEAAAAAAD/////oA8BDAAAAAQAAAAAAP////+gDwENAAAABAAAAGZm/////6APAQ4AAAAEAAAAZmb/////oA8BDwAAAAQAAABmZv////+gDwEQAAAABAAAAGZm/////6APAREAAAAEAAAAZmb/////oA8BEgAAAAQAAABmZv////+gDwETAAAABAAAAGZm/////6APARQAAAAEAAAAZab/////oA8BFQAAAAQAAABlpv////+gDwEWAAAABAAAAGWm/////6APARcAAAAEAAAAZab/////oA8BGAAAAAQAAABlpv////+gDwEZAAAABAAAAGWm/////6APARoAAAAEAAAAZab/////oA8BGwAAAAQAAABlpv////+gDwsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==";
+				
+				BinaryFormatter formatter = new BinaryFormatter();
+				byte[] bytes = Convert.FromBase64String(msg);
+				MemoryStream stream = new MemoryStream(bytes);
+				ColorZoneState state = (ColorZoneState) formatter.Deserialize(stream);
+				Console.WriteLine(state.ToString());
+				lifxDevice.SetExtendedColorZones(2000, 0, state.Colors);
 			}
 		}
 		
@@ -801,7 +969,7 @@ namespace HSPI_LIFX
 
 		private void pollDevices() {
 			foreach (DeviceDescriptor descriptor in devicesToPoll) {
-				LifxClient.Device lifxDevice = lifxClient.GetDeviceByAddress(hs3AddressToLifxAddress(descriptor.DevAddress));
+				Device lifxDevice = lifxClient.GetDeviceByAddress(hs3AddressToLifxAddress(descriptor.DevAddress));
 				if (lifxDevice == null) {
 					continue;
 				}
@@ -834,7 +1002,7 @@ namespace HSPI_LIFX
 					                            (shouldUpdateLabel ? "label " : "") +
 					                            (shouldUpdateState ? "state" : "")
 					);
-					LifxClient.LightStatus status = await lifxDevice.QueryLightStatus();
+					LightStatus status = await lifxDevice.QueryLightStatus();
 					bundle.TryFindChildren();
 					if (!bundle.IsComplete()) {
 						return;
@@ -940,5 +1108,11 @@ namespace HSPI_LIFX
 				return hashCode;
 			}
 		}
+	}
+
+	[Serializable]
+	internal struct MultiZoneTheme {
+		public string Name;
+		public ColorZoneState State;
 	}
 }

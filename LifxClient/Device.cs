@@ -1,6 +1,9 @@
 using System;
 using System.IO;
 using System.Net;
+using System.Reflection;
+using System.Runtime.CompilerServices;
+using System.Threading;
 using System.Threading.Tasks;
 using LifxClient.Enums;
 
@@ -157,6 +160,65 @@ namespace LifxClient
 			frame.AckRequired = true;
 			await client.sendPacketWithResponse(IPAddress, frame);
 		}
+
+		public async Task<ColorZoneState> GetExtendedColorZones() {
+			Frame frame = new Frame {
+				Target = Address,
+				Type = MessageType.GetExtendedColorZones,
+				ResponseRequired = true,
+				Payload = new byte[] { }
+			};
+			
+			Frame resp = await client.sendPacketWithResponse(IPAddress, frame);
+			return decodeMultiZoneStateFrame(resp);
+		}
+
+		public void SetExtendedColorZones(uint duration, ushort index, HSBK[] colors) {
+			client.sendPacket(IPAddress, buildSetExtendedColorZonesFrame(duration, index, colors));
+		}
+
+		public async Task SetExtendedColorZonesWithAck(uint duration, ushort index, HSBK[] colors) {
+			Frame frame = buildSetExtendedColorZonesFrame(duration, index, colors);
+			frame.AckRequired = true;
+			await client.sendPacketWithResponse(IPAddress, frame);
+		}
+
+		private Frame buildSetExtendedColorZonesFrame(uint duration, ushort index, HSBK[] colors) {
+			MemoryStream stream = new MemoryStream();
+			BinaryWriter writer = new BinaryWriter(stream);
+
+			writer.Write(duration);
+			writer.Write((byte) 1); // application request = APPLY
+			writer.Write(index);
+			writer.Write((byte) colors.Length);
+			
+			// Write the colors we were provided
+			for (byte i = 0; i < colors.Length; i++) {
+				writer.Write(colors[i].Hue);
+				writer.Write(colors[i].Saturation);
+				writer.Write(colors[i].Brightness);
+				writer.Write(colors[i].Kelvin);
+			}
+			
+			// Write the remaining 82-n HSBK values
+			for (byte i = (byte) colors.Length; i < 82; i++) {
+				writer.Write((ushort) 0);
+				writer.Write((ushort) 0);
+				writer.Write((ushort) 0);
+				writer.Write((ushort) 0);
+			}
+
+			Frame frame = new Frame {
+				Target = Address,
+				Type = MessageType.SetExtendedColorZones,
+				Payload = stream.GetBuffer()
+			};
+			
+			writer.Dispose();
+			stream.Dispose();
+
+			return frame;
+		}
 		
 #endregion
 
@@ -188,6 +250,32 @@ namespace LifxClient
 				Label = label,
 			};
 		}
+
+		private ColorZoneState decodeMultiZoneStateFrame(Frame frame) {
+			if (frame.Type != MessageType.StateExtendedColorZones) {
+				throw new Exception($"Got bad frame type {frame.Type} to decodeMultiZoneStateFrame");
+			}
+
+			MemoryStream stream = new MemoryStream(frame.Payload);
+			BinaryReader reader = new BinaryReader(stream);
+			
+			ColorZoneState state = new ColorZoneState();
+			state.Count = reader.ReadUInt16();
+			state.Index = reader.ReadUInt16();
+			state.ColorsCount = reader.ReadByte();
+			state.Colors = new HSBK[state.ColorsCount];
+
+			for (byte i = 0; i < state.ColorsCount; i++) {
+				HSBK color = new HSBK();
+				color.PopulateFromReader(reader);
+				state.Colors[i] = color;
+			}
+			
+			reader.Dispose();
+			stream.Dispose();
+			
+			return state;
+		}
 	}
 
 	public class DeviceVersion
@@ -213,6 +301,43 @@ namespace LifxClient
 		public override string ToString() {
 			return "Hue = " + Hue + "; Saturation = " + Saturation + "; Brightness = " + Brightness + "; Kelvin = " +
 			       Kelvin + "; Powered = " + Powered + "; Label = " + Label;
+		}
+	}
+
+	[Serializable]
+	public class ColorZoneState {
+		public ushort Count;
+		public ushort Index;
+		public ushort ColorsCount;
+		public HSBK[] Colors;
+
+		public override string ToString() {
+			string output = $"Count = {Count}; Index = {Index}; ColorsCount = {ColorsCount}";
+			for (byte i = 0; i < ColorsCount; i++) {
+				output += "\n" + Colors[i].ToString();
+			}
+
+			return output;
+		}
+	}
+
+	[Serializable]
+	// ReSharper disable once InconsistentNaming
+	public class HSBK {
+		public ushort Hue;
+		public ushort Saturation;
+		public ushort Brightness;
+		public ushort Kelvin;
+
+		internal void PopulateFromReader(BinaryReader reader) {
+			Hue = reader.ReadUInt16();
+			Saturation = reader.ReadUInt16();
+			Brightness = reader.ReadUInt16();
+			Kelvin = reader.ReadUInt16();
+		}
+
+		public override string ToString() {
+			return $"Hue = {Hue}; Saturation = {Saturation}; Brightness = {Brightness}; Kelvin = {Kelvin}";
 		}
 	}
 }

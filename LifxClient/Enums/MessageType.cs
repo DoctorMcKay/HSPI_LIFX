@@ -1,5 +1,8 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace LifxClient.Enums
 {
+	[SuppressMessage("ReSharper", "InconsistentNaming")]
 	public enum MessageType
 	{
 		GetService = 2,
@@ -43,5 +46,9 @@ namespace LifxClient.Enums
 		Light_GetInfrared = 120,
 		Light_StateInfrared = 121,
 		Light_SetInfrared = 122,
+		
+		SetExtendedColorZones = 510,
+		GetExtendedColorZones = 511,
+		StateExtendedColorZones = 512
 	}
 }
