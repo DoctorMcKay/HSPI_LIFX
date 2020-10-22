@@ -864,28 +864,6 @@ namespace HSPI_LIFX
 				bundle.CreateDevices(lifxDevice.LastKnownStatus.Label);
 				updateKnownDeviceCache();
 			}
-
-			if (hs3Addr == "D073D528D1A5") {
-				/*lifxDevice.GetExtendedColorZones().ContinueWith((task) => {
-					//Console.WriteLine(task.Result.ToString());
-					BinaryFormatter formatter = new BinaryFormatter();
-					MemoryStream stream = new MemoryStream();
-					formatter.Serialize(stream, task.Result);
-					Console.WriteLine(task.Result.ToString());
-					Console.WriteLine(Convert.ToBase64String(stream.GetBuffer()));
-					stream.Dispose();
-				});*/
-
-				string msg =
-					"AAEAAAD/////AQAAAAAAAAAMAgAAAEhMaWZ4Q2xpZW50LCBWZXJzaW9uPTEuMC43NTk5LjQyMzYwLCBDdWx0dXJlPW5ldXRyYWwsIFB1YmxpY0tleVRva2VuPW51bGwFAQAAABlMaWZ4Q2xpZW50LkNvbG9yWm9uZVN0YXRlBAAAAAVDb3VudAVJbmRleAtDb2xvcnNDb3VudAZDb2xvcnMAAAAEDg4OEUxpZnhDbGllbnQuSFNCS1tdAgAAAAIAAAAYAAAAGAAJAwAAAAcDAAAAAAEAAAAYAAAABA9MaWZ4Q2xpZW50LkhTQksCAAAACQQAAAAJBQAAAAkGAAAACQcAAAAJCAAAAAkJAAAACQoAAAAJCwAAAAkMAAAACQ0AAAAJDgAAAAkPAAAACRAAAAAJEQAAAAkSAAAACRMAAAAJFAAAAAkVAAAACRYAAAAJFwAAAAkYAAAACRkAAAAJGgAAAAkbAAAABQQAAAAPTGlmeENsaWVudC5IU0JLBAAAAANIdWUKU2F0dXJhdGlvbgpCcmlnaHRuZXNzBktlbHZpbgAAAAAODg4OAgAAAAAA/////6APAQUAAAAEAAAAAAD/////oA8BBgAAAAQAAAAAAP////+gDwEHAAAABAAAAAAA/////6APAQgAAAAEAAAAAAD/////oA8BCQAAAAQAAAAAAP////+gDwEKAAAABAAAAAAA/////6APAQsAAAAEAAAAAAD/////oA8BDAAAAAQAAAAAAP////+gDwENAAAABAAAAGZm/////6APAQ4AAAAEAAAAZmb/////oA8BDwAAAAQAAABmZv////+gDwEQAAAABAAAAGZm/////6APAREAAAAEAAAAZmb/////oA8BEgAAAAQAAABmZv////+gDwETAAAABAAAAGZm/////6APARQAAAAEAAAAZab/////oA8BFQAAAAQAAABlpv////+gDwEWAAAABAAAAGWm/////6APARcAAAAEAAAAZab/////oA8BGAAAAAQAAABlpv////+gDwEZAAAABAAAAGWm/////6APARoAAAAEAAAAZab/////oA8BGwAAAAQAAABlpv////+gDwsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==";
-				
-				BinaryFormatter formatter = new BinaryFormatter();
-				byte[] bytes = Convert.FromBase64String(msg);
-				MemoryStream stream = new MemoryStream(bytes);
-				ColorZoneState state = (ColorZoneState) formatter.Deserialize(stream);
-				Console.WriteLine(state.ToString());
-				lifxDevice.SetExtendedColorZones(2000, 0, state.Colors);
-			}
 		}
 		
 		private string lifxAddressToHs3Address(ulong lifxAddress) {
