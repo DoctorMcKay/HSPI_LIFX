@@ -718,7 +718,7 @@ namespace HSPI_LIFX
 
 			builder.Append("<tr><td class=\"tablecell\" colspan=\"1\" align=\"left\">Delete Theme</td>");
 			builder.Append("<td class=\"tablecell\" colspan=\"7\" align=\"left\">");
-			if (dropList.items.Count > 0) {
+			if (dropList.items.Count > 1) {
 				builder.Append(dropList.Build());
 			} else {
 				builder.Append("-- NO MULTIZONE THEMES --");
