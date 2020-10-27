@@ -848,7 +848,7 @@ namespace HSPI_LIFX
 
 		private void processDiscoveredDevice(Device lifxDevice) {
 			string hs3Addr = lifxAddressToHs3Address(lifxDevice.Address);
-			Program.WriteLog("debug", "Discovered LIFX device " + hs3Addr + " at " + lifxDevice.IPAddress);
+			Program.WriteLog("verbose", "Discovered LIFX device " + hs3Addr + " at " + lifxDevice.IPAddress);
 			
 			// Do we already have an HS3 device for this?
 			DeviceBundle bundle = new DeviceBundle(hs3Addr, this);
