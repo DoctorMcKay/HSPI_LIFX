@@ -59,6 +59,9 @@ namespace HSPI_LIFX
 			lifxClient.DeviceDiscovered += (object source, DeviceEventArgs args) => {
 				processDiscoveredDevice(args.Device);
 			};
+			lifxClient.DeviceLost += (src, arg) => {
+				Program.WriteLog("warn", $"LIFX device lost: {arg.Device.Address} (IP {arg.Device.IPAddress})");
+			};
 			
 			Program.WriteLog("console", "LIFX client started discovery");
 			
@@ -848,7 +851,7 @@ namespace HSPI_LIFX
 
 		private void processDiscoveredDevice(Device lifxDevice) {
 			string hs3Addr = lifxAddressToHs3Address(lifxDevice.Address);
-			Program.WriteLog("verbose", "Discovered LIFX device " + hs3Addr + " at " + lifxDevice.IPAddress);
+			Program.WriteLog("info", "Discovered LIFX device " + hs3Addr + " at " + lifxDevice.IPAddress);
 			
 			// Do we already have an HS3 device for this?
 			DeviceBundle bundle = new DeviceBundle(hs3Addr, this);
