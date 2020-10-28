@@ -95,6 +95,7 @@ namespace LifxClient
 		}
 
 		private void discoverDevices() {
+			Debug.WriteLine("Resetting device checkins");
 			var allDevices = devices.Values;
 			foreach (Device dev in allDevices) {
 				dev.CheckedIn = false;
@@ -110,6 +111,7 @@ namespace LifxClient
 			Task.Run(async () => {
 				await Task.Delay(2000);
 				foreach (Device dev in allDevices) {
+					Debug.WriteLine($"Device {dev.Address} checked in: {dev.CheckedIn}; missed checkins: {dev.MissedCheckins}");
 					if (!dev.CheckedIn && ++dev.MissedCheckins >= 5) {
 						removeFailedDevice(dev);
 					}
@@ -210,6 +212,7 @@ namespace LifxClient
 						if (devices.TryGetValue(frame.Target, out device)) {
 							//Debug.WriteLine("Address " + frame.Target.ToString("X") + " is already known; not querying");
 							device.CheckedIn = true;
+							device.MissedCheckins = 0;
 							
 							// Make sure the IP address hasn't changed
 							if (!device.IPAddress.Equals(remote)) {
@@ -257,9 +260,7 @@ namespace LifxClient
 			}
 
 			var handler = DeviceLost;
-			if (handler != null) {
-				handler(this, new DeviceEventArgs(dev));
-			}
+			handler?.Invoke(this, new DeviceEventArgs(dev));
 		}
 	}
 
