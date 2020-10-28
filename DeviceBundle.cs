@@ -12,11 +12,11 @@ namespace HSPI_LIFX
 		public int Color { get; set; }
 		public int Temperature { get; set; }
 
-		private readonly HSPI plugin;
+		private readonly HSPI _plugin;
 
 		public DeviceBundle(string address, HSPI plugin) {
-			this.Address = address.Split('-')[0];
-			this.plugin = plugin;
+			Address = address.Split('-')[0];
+			_plugin = plugin;
 		}
 
 		public void TryFindChildren() {
@@ -24,7 +24,7 @@ namespace HSPI_LIFX
 				return;
 			}
 			
-			IHSApplication hs = plugin.hs;
+			IHSApplication hs = _plugin.hs;
 
 			DeviceClass root = (DeviceClass) hs.GetDeviceByRef(Root);
 			foreach (int childRef in root.get_AssociatedDevices(hs)) {
@@ -63,15 +63,15 @@ namespace HSPI_LIFX
 				return;
 			}
 			
-			createRoot(label);
-			createBrightness(label);
-			createColor(label);
-			createTemperature(label);
-			associateDevices();
+			_createRoot(label);
+			_createBrightness(label);
+			_createColor(label);
+			_createTemperature(label);
+			_associateDevices();
 		}
 
 		public void UpdateName(string label) {
-			IHSApplication hs = plugin.hs;
+			IHSApplication hs = _plugin.hs;
 
 			((DeviceClass) hs.GetDeviceByRef(Root)).set_Name(hs, label);
 			((DeviceClass) hs.GetDeviceByRef(Brightness)).set_Name(hs, label + " Brightness");
@@ -79,18 +79,18 @@ namespace HSPI_LIFX
 			((DeviceClass) hs.GetDeviceByRef(Temperature)).set_Name(hs, label + " Color Temperature");
 		}
 
-		private void createRoot(string label) {
+		private void _createRoot(string label) {
 			if (Root != 0) {
 				return;
 			}
 
-			IHSApplication hs = plugin.hs;
+			IHSApplication hs = _plugin.hs;
 
 			int hsRef = hs.NewDeviceRef(label);
 			DeviceClass device = (DeviceClass) hs.GetDeviceByRef(hsRef);
 			device.set_Address(hs, GetSubDeviceAddress(SubDeviceType.Root));
-			device.set_Interface(hs, plugin.Name);
-			device.set_InterfaceInstance(hs, plugin.InstanceFriendlyName());
+			device.set_Interface(hs, _plugin.Name);
+			device.set_InterfaceInstance(hs, _plugin.InstanceFriendlyName());
 			device.set_Device_Type_String(hs, "LIFX Root Device");
 			device.set_DeviceType_Set(hs, new DeviceTypeInfo_m.DeviceTypeInfo {
 				Device_Type = DeviceTypeInfo_m.DeviceTypeInfo.eDeviceType_GenericRoot
@@ -101,18 +101,18 @@ namespace HSPI_LIFX
 			Root = hsRef;
 		}
 
-		private void createBrightness(string label) {
+		private void _createBrightness(string label) {
 			if (Brightness != 0) {
 				return;
 			}
 			
-			IHSApplication hs = plugin.hs;
+			IHSApplication hs = _plugin.hs;
 
 			int hsRef = hs.NewDeviceRef(label + " Brightness");
 			DeviceClass device = (DeviceClass) hs.GetDeviceByRef(hsRef);
 			device.set_Address(hs, GetSubDeviceAddress(SubDeviceType.Brightness));
-			device.set_Interface(hs, plugin.Name);
-			device.set_InterfaceInstance(hs, plugin.InstanceFriendlyName());
+			device.set_Interface(hs, _plugin.Name);
+			device.set_InterfaceInstance(hs, _plugin.InstanceFriendlyName());
 			device.set_Device_Type_String(hs, "LIFX Device Brightness");
 			device.set_DeviceType_Set(hs, new DeviceTypeInfo_m.DeviceTypeInfo {
 				Device_API = DeviceTypeInfo_m.DeviceTypeInfo.eDeviceAPI.Plug_In
@@ -174,24 +174,24 @@ namespace HSPI_LIFX
 			device.MISC_Set(hs, Enums.dvMISC.SHOW_VALUES);
 			device.MISC_Set(hs, Enums.dvMISC.IS_LIGHT);
 			
-			plugin.IgnoreNextDeviceControl(hsRef);
+			_plugin.IgnoreNextDeviceControl(hsRef);
 			hs.SetDeviceValueByRef(hsRef, 0, false);
 			
 			Brightness = hsRef;
 		}
 
-		private void createColor(string label) {
+		private void _createColor(string label) {
 			if (Color != 0) {
 				return;
 			}
 			
-			IHSApplication hs = plugin.hs;
+			IHSApplication hs = _plugin.hs;
 
 			int hsRef = hs.NewDeviceRef(label + " Color");
 			DeviceClass device = (DeviceClass) hs.GetDeviceByRef(hsRef);
 			device.set_Address(hs, GetSubDeviceAddress(SubDeviceType.Color));
-			device.set_Interface(hs, plugin.Name);
-			device.set_InterfaceInstance(hs, plugin.InstanceFriendlyName());
+			device.set_Interface(hs, _plugin.Name);
+			device.set_InterfaceInstance(hs, _plugin.InstanceFriendlyName());
 			device.set_Device_Type_String(hs, "LIFX Device Color");
 			device.set_DeviceType_Set(hs, new DeviceTypeInfo_m.DeviceTypeInfo {
 				Device_API = DeviceTypeInfo_m.DeviceTypeInfo.eDeviceAPI.Plug_In
@@ -212,18 +212,18 @@ namespace HSPI_LIFX
 			Color = hsRef;
 		}
 		
-		private void createTemperature(string label) {
+		private void _createTemperature(string label) {
 			if (Temperature != 0) {
 				return;
 			}
 			
-			IHSApplication hs = plugin.hs;
+			IHSApplication hs = _plugin.hs;
 
 			int hsRef = hs.NewDeviceRef(label + " Color Temperature");
 			DeviceClass device = (DeviceClass) hs.GetDeviceByRef(hsRef);
 			device.set_Address(hs, GetSubDeviceAddress(SubDeviceType.Temperature));
-			device.set_Interface(hs, plugin.Name);
-			device.set_InterfaceInstance(hs, plugin.InstanceFriendlyName());
+			device.set_Interface(hs, _plugin.Name);
+			device.set_InterfaceInstance(hs, _plugin.InstanceFriendlyName());
 			device.set_Device_Type_String(hs, "LIFX Device Color Temperature");
 			device.set_DeviceType_Set(hs, new DeviceTypeInfo_m.DeviceTypeInfo {
 				Device_API = DeviceTypeInfo_m.DeviceTypeInfo.eDeviceAPI.Plug_In
@@ -240,14 +240,14 @@ namespace HSPI_LIFX
 			
 			device.MISC_Set(hs, Enums.dvMISC.SHOW_VALUES);
 
-			plugin.IgnoreNextDeviceControl(hsRef);
+			_plugin.IgnoreNextDeviceControl(hsRef);
 			hs.SetDeviceValueByRef(hsRef, 3200, false);
 			
 			Temperature = hsRef;
 		}
 
-		private void associateDevices() {
-			IHSApplication hs = plugin.hs;
+		private void _associateDevices() {
+			IHSApplication hs = _plugin.hs;
 
 			DeviceClass root = (DeviceClass) hs.GetDeviceByRef(Root);
 			DeviceClass brightness = (DeviceClass) hs.GetDeviceByRef(Brightness);

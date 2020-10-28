@@ -25,7 +25,7 @@ namespace LifxClient
 		}
 
 		public async Task<DeviceVersion> GetVersion() {
-			var resp = await client.sendPacketWithRetry(IPAddress, new Frame {
+			var resp = await client._sendPacketWithRetry(IPAddress, new Frame {
 				Payload = new byte[] { },
 				Target = Address,
 				Type = MessageType.GetVersion,
@@ -54,7 +54,7 @@ namespace LifxClient
 		/// <summary> Query this device's light status. </summary>
 		/// <returns>LightStatus</returns>
 		public async Task<LightStatus> QueryLightStatus() {
-			var resp = await client.sendPacketWithRetry(IPAddress, new Frame {
+			var resp = await client._sendPacketWithRetry(IPAddress, new Frame {
 				Payload = new byte[] { },
 				Target = Address,
 				Type = MessageType.Light_Get,
@@ -96,7 +96,7 @@ namespace LifxClient
 		/// <param name="powered">True to turn on, false to turn off</param>
 		/// <param name="duration">Time in ms for the transition</param>
 		public void SetPowered(bool powered, uint duration) {
-			client.sendPacket(IPAddress, buildSetPoweredFrame(powered, duration));
+			client._sendPacket(IPAddress, buildSetPoweredFrame(powered, duration));
 		}
 
 		/// <summary> Turn this device on or off. The async method returns when the LIFX device acknowledges the request. </summary>
@@ -105,7 +105,7 @@ namespace LifxClient
 		public async Task SetPoweredWithAck(bool powered, uint duration) {
 			Frame frame = buildSetPoweredFrame(powered, duration);
 			frame.AckRequired = true;
-			await client.sendPacketWithRetry(IPAddress, frame);
+			await client._sendPacketWithRetry(IPAddress, frame);
 		}
 		
 #endregion
@@ -148,7 +148,7 @@ namespace LifxClient
 		/// <param name="kelvin">Warmness, 2500 (warm) - 9000 (cool)</param>
 		/// <param name="duration">Time in ms for the transition</param>
 		public void SetColor(ushort hue, ushort saturation, ushort brightness, ushort kelvin, uint duration) {
-			client.sendPacket(IPAddress, buildSetColorFrame(hue, saturation, brightness, kelvin, duration));
+			client._sendPacket(IPAddress, buildSetColorFrame(hue, saturation, brightness, kelvin, duration));
 		}
 
 		/// <summary> Set this device's color and brightness. The async method returns when the LIFX device acknowledges the request. </summary>
@@ -160,7 +160,7 @@ namespace LifxClient
 		public async Task SetColorWithAck(ushort hue, ushort saturation, ushort brightness, ushort kelvin, uint duration) {
 			Frame frame = buildSetColorFrame(hue, saturation, brightness, kelvin, duration);
 			frame.AckRequired = true;
-			await client.sendPacketWithRetry(IPAddress, frame);
+			await client._sendPacketWithRetry(IPAddress, frame);
 		}
 
 		public async Task<ColorZoneState> GetExtendedColorZones() {
@@ -171,18 +171,18 @@ namespace LifxClient
 				Payload = new byte[] { }
 			};
 			
-			Frame resp = await client.sendPacketWithRetry(IPAddress, frame);
+			Frame resp = await client._sendPacketWithRetry(IPAddress, frame);
 			return decodeMultiZoneStateFrame(resp);
 		}
 
 		public void SetExtendedColorZones(uint duration, ushort index, HSBK[] colors) {
-			client.sendPacket(IPAddress, buildSetExtendedColorZonesFrame(duration, index, colors));
+			client._sendPacket(IPAddress, buildSetExtendedColorZonesFrame(duration, index, colors));
 		}
 
 		public async Task SetExtendedColorZonesWithAck(uint duration, ushort index, HSBK[] colors) {
 			Frame frame = buildSetExtendedColorZonesFrame(duration, index, colors);
 			frame.AckRequired = true;
-			await client.sendPacketWithRetry(IPAddress, frame);
+			await client._sendPacketWithRetry(IPAddress, frame);
 		}
 
 		private Frame buildSetExtendedColorZonesFrame(uint duration, ushort index, HSBK[] colors) {

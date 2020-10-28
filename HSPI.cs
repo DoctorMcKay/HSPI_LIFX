@@ -19,15 +19,15 @@ namespace HSPI_LIFX
 	// ReSharper disable once InconsistentNaming
 	public class HSPI : HspiBase
 	{
-		private Client lifxClient;
-		private List<DeviceDescriptor> knownDeviceCache;
-		private readonly List<DeviceDescriptor> devicesToPoll;
-		private readonly Dictionary<int, Timer> ignoreControls;
-		private Timer pollTimer;
+		private Client _lifxClient;
+		private List<DeviceDescriptor> _knownDeviceCache;
+		private readonly List<DeviceDescriptor> _devicesToPoll;
+		private readonly Dictionary<int, Timer> _ignoreControls;
+		private Timer _pollTimer;
 		
-		private const uint TRANSITION_TIME = 1000;
-		private const ushort DISCOVERY_FREQUENCY = 30000;
-		private const ushort DEVICE_STATUS_POLL_FREQUENCY = 10000;
+		private const uint TransitionTime = 1000;
+		private const ushort DiscoveryFrequency = 30000;
+		private const ushort DeviceStatusPollFrequency = 10000;
 		
 		public HSPI() {
 			Name = "HS3LIFX";
@@ -35,40 +35,37 @@ namespace HSPI_LIFX
 			PluginActionCount = 1;
 			PluginSupportsConfigDevice = true;
 			
-			devicesToPoll = new List<DeviceDescriptor>();
-			ignoreControls = new Dictionary<int, Timer>();
+			_devicesToPoll = new List<DeviceDescriptor>();
+			_ignoreControls = new Dictionary<int, Timer>();
 		}
 
 		public override string InitIO(string port) {
 			Program.WriteLog("verbose", "InitIO");
 			
-			updateKnownDeviceCache();
+			_updateKnownDeviceCache();
 
 			Program.WriteLog("console", "Known device cache updated");
 			
-			foreach (DeviceDescriptor device in knownDeviceCache) {
-				if (checkShouldPollDevice(device)) {
-					devicesToPoll.Add(device);
-				}
+			foreach (var device in _knownDeviceCache.Where(device => _checkShouldPollDevice(device))) {
+				_devicesToPoll.Add(device);
 			}
 
 			Program.WriteLog("console", "Devices to poll list built");
 
-			lifxClient = new Client {DiscoveryFrequency = DISCOVERY_FREQUENCY};
-			lifxClient.StartDiscovery();
-			lifxClient.DeviceDiscovered += (object source, DeviceEventArgs args) => {
-				processDiscoveredDevice(args.Device);
+			_lifxClient = new Client {DiscoveryFrequency = DiscoveryFrequency};
+			_lifxClient.StartDiscovery();
+			_lifxClient.DeviceDiscovered += (object source, DeviceEventArgs args) => {
+				_processDiscoveredDevice(args.Device);
 			};
-			lifxClient.DeviceLost += (src, arg) => {
+			_lifxClient.DeviceLost += (src, arg) => {
 				Program.WriteLog("warn", $"LIFX device lost: {arg.Device.Address} (IP {arg.Device.IPAddress})");
 			};
 			
 			Program.WriteLog("console", "LIFX client started discovery");
-			
-			pollTimer = new Timer(DEVICE_STATUS_POLL_FREQUENCY);
-			pollTimer.AutoReset = true;
-			pollTimer.Elapsed += (object src, ElapsedEventArgs args) => { pollDevices(); };
-			pollTimer.Start();
+
+			_pollTimer = new Timer(DeviceStatusPollFrequency) {AutoReset = true};
+			_pollTimer.Elapsed += (object src, ElapsedEventArgs args) => { _pollDevices(); };
+			_pollTimer.Start();
 
 			Program.WriteLog("verbose", "InitIO returning");
 			return "";
@@ -78,8 +75,8 @@ namespace HSPI_LIFX
 			// TODO inspect all the commands at once
 
 			// Reset the poll timer so we don't run the risk of race conditions
-			pollTimer.Stop();
-			pollTimer.Start();
+			_pollTimer.Stop();
+			_pollTimer.Start();
 			
 			foreach (CAPI.CAPIControl ctrl in colSend) {
 				if (ctrl == null) {
@@ -87,10 +84,9 @@ namespace HSPI_LIFX
 				}
 				
 				int devRef = ctrl.Ref;
-				Timer ignoreTimer;
-				if (ignoreControls.TryGetValue(devRef, out ignoreTimer)) {
+				if (_ignoreControls.TryGetValue(devRef, out Timer ignoreTimer)) {
 					ignoreTimer.Dispose();
-					ignoreControls.Remove(devRef);
+					_ignoreControls.Remove(devRef);
 					continue;
 				}
 				
@@ -117,14 +113,14 @@ namespace HSPI_LIFX
 					continue;
 				}
 
-				Device lifxDevice = lifxClient.GetDeviceByAddress(hs3AddressToLifxAddress(addressParts[0]));
+				Device lifxDevice = _lifxClient.GetDeviceByAddress(_hs3AddressToLifxAddress(addressParts[0]));
 				if (lifxDevice == null) {
 					Program.WriteLog("error",
 						"No known LIFX device for ref " + devRef + " (" + addressParts[0] + ")");
 					continue;
 				}
 
-				uint transitionTime = TRANSITION_TIME;
+				uint transitionTime = TransitionTime;
 				PlugExtraData.clsPlugExtraData extraData = device.get_PlugExtraData_Get(hs);
 				try {
 					object tempObj;
@@ -157,23 +153,23 @@ namespace HSPI_LIFX
 						switch (subType) {
 							case SubDeviceType.Brightness:
 								temperature = (ushort) hs.DeviceValue(bundle.Temperature);
-								color = ColorConvert.rgbToHsv(
-									ColorConvert.stringToRgb(hs.DeviceString(bundle.Color))
+								color = ColorConvert.RgbToHsv(
+									ColorConvert.StringToRgb(hs.DeviceString(bundle.Color))
 								);
 								controlValue = Math.Min(controlValue, 99);
 								brightness = (ushort) ((double) controlValue / 100.0 * ushort.MaxValue);
 								break;
 							
 							case SubDeviceType.Color:
-								color = ColorConvert.rgbToHsv(ColorConvert.stringToRgb(controlString));
+								color = ColorConvert.RgbToHsv(ColorConvert.StringToRgb(controlString));
 								temperature = (ushort) hs.DeviceValue(bundle.Temperature);
 								brightness = (ushort) ((double) hs.DeviceValue(bundle.Brightness) / 100.0 * ushort.MaxValue);
 								break;
 							
 							case SubDeviceType.Temperature:
 								brightness = (ushort) ((double) hs.DeviceValue(bundle.Brightness) / 100.0 * ushort.MaxValue);
-								color = ColorConvert.rgbToHsv(
-									ColorConvert.stringToRgb(hs.DeviceString(bundle.Color))
+								color = ColorConvert.RgbToHsv(
+									ColorConvert.StringToRgb(hs.DeviceString(bundle.Color))
 								);
 								temperature = (ushort) controlValue;
 								break;
@@ -220,23 +216,23 @@ namespace HSPI_LIFX
 
 			// Action type dropdown
 			clsJQuery.jqDropList actionSelector = new clsJQuery.jqDropList("ActionType" + unique, "events", true);
-			actionSelector.AddItem("(Choose A LIFX Action)", LifxControlActionData.ACTION_UNSELECTED.ToString(),
-				actInfo.SubTANumber == LifxControlActionData.ACTION_UNSELECTED);
-			actionSelector.AddItem("Set color...", LifxControlActionData.ACTION_SET_COLOR.ToString(),
-				actInfo.SubTANumber == LifxControlActionData.ACTION_SET_COLOR);
-			actionSelector.AddItem("Set color and brightness...", LifxControlActionData.ACTION_SET_COLOR_AND_BRIGHTNESS.ToString(),
-				actInfo.SubTANumber == LifxControlActionData.ACTION_SET_COLOR_AND_BRIGHTNESS);
-			actionSelector.AddItem("Recall Multi-Zone Theme...", LifxControlActionData.ACTION_RECALL_MZ_THEME.ToString(),
-				actInfo.SubTANumber == LifxControlActionData.ACTION_RECALL_MZ_THEME);
-			actionSelector.AddItem("Set transition time...", LifxControlActionData.ACTION_SET_TRANSITION_TIME.ToString(),
-				actInfo.SubTANumber == LifxControlActionData.ACTION_SET_TRANSITION_TIME);
+			actionSelector.AddItem("(Choose A LIFX Action)", LifxControlActionData.ActionUnselected.ToString(),
+				actInfo.SubTANumber == LifxControlActionData.ActionUnselected);
+			actionSelector.AddItem("Set color...", LifxControlActionData.ActionSetColor.ToString(),
+				actInfo.SubTANumber == LifxControlActionData.ActionSetColor);
+			actionSelector.AddItem("Set color and brightness...", LifxControlActionData.ActionSetColorAndBrightness.ToString(),
+				actInfo.SubTANumber == LifxControlActionData.ActionSetColorAndBrightness);
+			actionSelector.AddItem("Recall Multi-Zone Theme...", LifxControlActionData.ActionRecallMzTheme.ToString(),
+				actInfo.SubTANumber == LifxControlActionData.ActionRecallMzTheme);
+			actionSelector.AddItem("Set transition time...", LifxControlActionData.ActionSetTransitionTime.ToString(),
+				actInfo.SubTANumber == LifxControlActionData.ActionSetTransitionTime);
 			builder.Append(actionSelector.Build());
 
 			// Device selector dropdown
-			if (actInfo.SubTANumber != LifxControlActionData.ACTION_UNSELECTED) {
+			if (actInfo.SubTANumber != LifxControlActionData.ActionUnselected) {
 				clsJQuery.jqDropList deviceSelector = new clsJQuery.jqDropList("Device" + unique, "events", true);
 				deviceSelector.AddItem("(Choose A Device)", "0", data.DevRef == 0);
-				foreach (DeviceDescriptor device in knownDeviceCache) {
+				foreach (DeviceDescriptor device in _knownDeviceCache) {
 					deviceSelector.AddItem(device.DevName, device.DevRef.ToString(), data.DevRef == device.DevRef);
 				}
 
@@ -247,11 +243,11 @@ namespace HSPI_LIFX
 				clsJQuery.jqCheckBox overrideTransitionBox;
 				
 				switch (actInfo.SubTANumber) {
-					case LifxControlActionData.ACTION_UNSELECTED:
+					case LifxControlActionData.ActionUnselected:
 						break;
 
-					case LifxControlActionData.ACTION_SET_COLOR:
-					case LifxControlActionData.ACTION_SET_COLOR_AND_BRIGHTNESS:
+					case LifxControlActionData.ActionSetColor:
+					case LifxControlActionData.ActionSetColorAndBrightness:
 						string chosenColor = "ffffff";
 						if (!string.IsNullOrEmpty(data.Color)) {
 							chosenColor = data.Color;
@@ -261,7 +257,7 @@ namespace HSPI_LIFX
 							new clsJQuery.jqColorPicker("Color" + unique, "events", 6, chosenColor);
 						builder.Append(colorPicker.Build());
 
-						if (actInfo.SubTANumber == LifxControlActionData.ACTION_SET_COLOR_AND_BRIGHTNESS) {
+						if (actInfo.SubTANumber == LifxControlActionData.ActionSetColorAndBrightness) {
 							clsJQuery.jqDropList brightnessPicker =
 								new clsJQuery.jqDropList("BrightnessPercent" + unique, "events", true);
 							brightnessPicker.AddItem("", "255", data.BrightnessPercent == 255);
@@ -282,12 +278,12 @@ namespace HSPI_LIFX
 						overrideTransitionBox = new clsJQuery.jqCheckBox("OverrideTransitionTime" + unique, "Override transition time",
 								"Events", true, true);
 						overrideTransitionBox.@checked =
-							data.HasFlag(LifxControlActionData.FLAG_OVERRIDE_TRANSITION_TIME);
+							data.HasFlag(LifxControlActionData.FlagOverrideTransitionTime);
 						builder.Append(overrideTransitionBox.Build());
 						
 						break;
 					
-					case LifxControlActionData.ACTION_RECALL_MZ_THEME:
+					case LifxControlActionData.ActionRecallMzTheme:
 						clsJQuery.jqDropList themePicker = new clsJQuery.jqDropList("Color" + unique, "events", true);
 						themePicker.AddItem("(Choose A Theme)", "", data.Color == "");
 						foreach (string name in getMultizoneThemes(((DeviceClass) hs.GetDeviceByRef(data.DevRef)).get_PlugExtraData_Get(hs)).Keys) {
@@ -300,12 +296,12 @@ namespace HSPI_LIFX
 							new clsJQuery.jqCheckBox("OverrideTransitionTime" + unique, "Override transition time",
 								"Events", true, true);
 						overrideTransitionBox.@checked =
-							data.HasFlag(LifxControlActionData.FLAG_OVERRIDE_TRANSITION_TIME);
+							data.HasFlag(LifxControlActionData.FlagOverrideTransitionTime);
 						builder.Append(overrideTransitionBox.Build());
 						
 						break;
 
-					case LifxControlActionData.ACTION_SET_TRANSITION_TIME:
+					case LifxControlActionData.ActionSetTransitionTime:
 						// nothing
 						break;
 
@@ -315,13 +311,13 @@ namespace HSPI_LIFX
 				}
 			}
 
-			if (actInfo.SubTANumber == LifxControlActionData.ACTION_SET_TRANSITION_TIME ||
-			    data.HasFlag(LifxControlActionData.FLAG_OVERRIDE_TRANSITION_TIME)) {
+			if (actInfo.SubTANumber == LifxControlActionData.ActionSetTransitionTime ||
+			    data.HasFlag(LifxControlActionData.FlagOverrideTransitionTime)) {
 				
 				clsJQuery.jqTimeSpanPicker timePicker =
 					new clsJQuery.jqTimeSpanPicker("TransitionTime" + unique, "Transition Time", "events", true);
 				timePicker.showDays = false;
-				timePicker.defaultTimeSpan = TimeSpan.FromMilliseconds(data.TransitionTimeMilliseconds == 0 ? TRANSITION_TIME : data.TransitionTimeMilliseconds);
+				timePicker.defaultTimeSpan = TimeSpan.FromMilliseconds(data.TransitionTimeMilliseconds == 0 ? TransitionTime : data.TransitionTimeMilliseconds);
 				builder.Append(timePicker.Build());
 			}
 
@@ -372,16 +368,15 @@ namespace HSPI_LIFX
 			}
 
 			string newBrightnessPct = postData.Get("BrightnessPercent");
-			byte newBrightness;
-			if (newBrightnessPct != null && byte.TryParse(newBrightnessPct, out newBrightness)) {
+			if (newBrightnessPct != null && byte.TryParse(newBrightnessPct, out byte newBrightness)) {
 				data.BrightnessPercent = newBrightness;
 			}
 
 			string newOverrideTransitionTime = postData.Get("OverrideTransitionTime");
 			if (newOverrideTransitionTime == "checked") {
-				data.Flags |= LifxControlActionData.FLAG_OVERRIDE_TRANSITION_TIME;
+				data.Flags |= LifxControlActionData.FlagOverrideTransitionTime;
 			} else if (newOverrideTransitionTime == "unchecked") {
-				data.Flags &= ~LifxControlActionData.FLAG_OVERRIDE_TRANSITION_TIME;
+				data.Flags &= ~LifxControlActionData.FlagOverrideTransitionTime;
 			}
 
 			output.DataOut = data.Serialize();
@@ -391,29 +386,29 @@ namespace HSPI_LIFX
 
 		public override bool ActionConfigured(IPlugInAPI.strTrigActInfo actInfo) {
 			LifxControlActionData data = LifxControlActionData.Unserialize(actInfo.DataIn);
-			if (actInfo.SubTANumber == LifxControlActionData.ACTION_UNSELECTED || data.DevRef == 0) {
+			if (actInfo.SubTANumber == LifxControlActionData.ActionUnselected || data.DevRef == 0) {
 				return false;
 			}
 
-			if (actInfo.SubTANumber == LifxControlActionData.ACTION_SET_COLOR && data.Color.Length != 6) {
+			if (actInfo.SubTANumber == LifxControlActionData.ActionSetColor && data.Color.Length != 6) {
 				// TODO eventually check for hex
 				return false;
 			}
 
-			if (actInfo.SubTANumber == LifxControlActionData.ACTION_SET_COLOR_AND_BRIGHTNESS &&
+			if (actInfo.SubTANumber == LifxControlActionData.ActionSetColorAndBrightness &&
 			    (data.Color.Length != 6 || data.BrightnessPercent == 255)) {
 				return false;
 			}
 
-			if (actInfo.SubTANumber == LifxControlActionData.ACTION_RECALL_MZ_THEME && string.IsNullOrEmpty(data.Color)) {
+			if (actInfo.SubTANumber == LifxControlActionData.ActionRecallMzTheme && string.IsNullOrEmpty(data.Color)) {
 				return false;
 			}
 			
-			if (actInfo.SubTANumber == LifxControlActionData.ACTION_SET_TRANSITION_TIME && data.TransitionTimeMilliseconds == 0) {
+			if (actInfo.SubTANumber == LifxControlActionData.ActionSetTransitionTime && data.TransitionTimeMilliseconds == 0) {
 				return false;
 			}
 
-			if (data.HasFlag(LifxControlActionData.FLAG_OVERRIDE_TRANSITION_TIME) && data.TransitionTimeMilliseconds == 0) {
+			if (data.HasFlag(LifxControlActionData.FlagOverrideTransitionTime) && data.TransitionTimeMilliseconds == 0) {
 				return false;
 			}
 			
@@ -430,16 +425,16 @@ namespace HSPI_LIFX
 			StringBuilder builder = new StringBuilder();
 			builder.Append("Set LIFX ");
 			switch (actInfo.SubTANumber) {
-				case LifxControlActionData.ACTION_SET_COLOR:
-				case LifxControlActionData.ACTION_SET_COLOR_AND_BRIGHTNESS:
+				case LifxControlActionData.ActionSetColor:
+				case LifxControlActionData.ActionSetColorAndBrightness:
 					builder.Append("<span class=\"event_Txt_Selection\">Color</span>");
 					break;
 				
-				case LifxControlActionData.ACTION_RECALL_MZ_THEME:
+				case LifxControlActionData.ActionRecallMzTheme:
 					builder.Append("<span class=\"event_Txt_Selection\">Multi-Zone Theme</span>");
 					break;
 				
-				case LifxControlActionData.ACTION_SET_TRANSITION_TIME:
+				case LifxControlActionData.ActionSetTransitionTime:
 					builder.Append("<span class=\"event_Txt_Selection\">Transition Time</span>");
 					break;
 				
@@ -453,24 +448,24 @@ namespace HSPI_LIFX
 			builder.Append("</span> to ");
 
 			switch (actInfo.SubTANumber) {
-				case LifxControlActionData.ACTION_SET_COLOR:
-				case LifxControlActionData.ACTION_SET_COLOR_AND_BRIGHTNESS:
+				case LifxControlActionData.ActionSetColor:
+				case LifxControlActionData.ActionSetColorAndBrightness:
 					builder.Append(
 						"<span style=\"display: inline-block; width: 10px; height: 10px; background-color: #" +
 						data.Color + "\"></span> ");
 					
 					builder.Append("<span class=\"event_Txt_Selection\">#" + data.Color.ToUpper() + "</span>");
-					if (actInfo.SubTANumber == LifxControlActionData.ACTION_SET_COLOR_AND_BRIGHTNESS) {
+					if (actInfo.SubTANumber == LifxControlActionData.ActionSetColorAndBrightness) {
 						builder.Append(" with brightness <span class=\"event_Txt_Selection\">" +
 						               data.BrightnessPercent + "%</span>");
 					}
 					break;
 				
-				case LifxControlActionData.ACTION_RECALL_MZ_THEME:
+				case LifxControlActionData.ActionRecallMzTheme:
 					builder.Append("<span class=\"event_Txt_Selection\">" + data.Color + "</span>");
 					break;
 				
-				case LifxControlActionData.ACTION_SET_TRANSITION_TIME:
+				case LifxControlActionData.ActionSetTransitionTime:
 					builder.Append("<span class=\"event_Txt_Selection\">" + (data.TransitionTimeMilliseconds / 1000) + " seconds</span>");
 					break;
 				
@@ -479,7 +474,7 @@ namespace HSPI_LIFX
 					break;
 			}
 
-			if (data.HasFlag(LifxControlActionData.FLAG_OVERRIDE_TRANSITION_TIME)) {
+			if (data.HasFlag(LifxControlActionData.FlagOverrideTransitionTime)) {
 				builder.Append(" over <span class=\"event_Txt_Selection\">");
 				builder.Append(data.TransitionTimeMilliseconds / 1000);
 				builder.Append(" seconds</span>");
@@ -495,8 +490,8 @@ namespace HSPI_LIFX
 			}
 
 			// Reset the poll timer so we don't run the risk of race conditions
-			pollTimer.Stop();
-			pollTimer.Start();
+			_pollTimer.Stop();
+			_pollTimer.Start();
 			
 			LifxControlActionData data = LifxControlActionData.Unserialize(actInfo.DataIn);
 
@@ -507,8 +502,8 @@ namespace HSPI_LIFX
 			uint transitionTime;
 
 			switch (actInfo.SubTANumber) {
-				case LifxControlActionData.ACTION_SET_COLOR:
-				case LifxControlActionData.ACTION_SET_COLOR_AND_BRIGHTNESS:
+				case LifxControlActionData.ActionSetColor:
+				case LifxControlActionData.ActionSetColorAndBrightness:
 					rootRef = data.DevRef;
 					device = (DeviceClass) hs.GetDeviceByRef(rootRef);
 					DeviceBundle bundle = new DeviceBundle(device.get_Address(hs).Split('-')[0], this);
@@ -520,7 +515,7 @@ namespace HSPI_LIFX
 						return false;
 					}
 
-					lifxDevice = lifxClient.GetDeviceByAddress(hs3AddressToLifxAddress(bundle.Address));
+					lifxDevice = _lifxClient.GetDeviceByAddress(_hs3AddressToLifxAddress(bundle.Address));
 					if (lifxDevice == null) {
 						Program.WriteLog("error",
 							"No LIFX device found on the network for address " + bundle.Address + " for event " +
@@ -528,7 +523,7 @@ namespace HSPI_LIFX
 						return false;
 					}
 
-					transitionTime = TRANSITION_TIME;
+					transitionTime = TransitionTime;
 					extraData = device.get_PlugExtraData_Get(hs);
 					try {
 						object tempObj = extraData.GetNamed("TransitionRateMs");
@@ -538,16 +533,16 @@ namespace HSPI_LIFX
 					}
 					catch (Exception) {}
 
-					if (data.HasFlag(LifxControlActionData.FLAG_OVERRIDE_TRANSITION_TIME)) {
+					if (data.HasFlag(LifxControlActionData.FlagOverrideTransitionTime)) {
 						transitionTime = data.TransitionTimeMilliseconds;
 					}
 					
-					HSV color = ColorConvert.rgbToHsv(ColorConvert.stringToRgb(data.Color));
+					HSV color = ColorConvert.RgbToHsv(ColorConvert.StringToRgb(data.Color));
 					ushort hue = (ushort) (color.Hue * ushort.MaxValue);
 					ushort sat = (ushort) (color.Saturation * ushort.MaxValue);
 					ushort temperature = (ushort) ((DeviceClass) hs.GetDeviceByRef(bundle.Temperature)).get_devValue(hs);
 					byte brightPct;
-					if (actInfo.SubTANumber == LifxControlActionData.ACTION_SET_COLOR_AND_BRIGHTNESS) {
+					if (actInfo.SubTANumber == LifxControlActionData.ActionSetColorAndBrightness) {
 						brightPct = data.BrightnessPercent;
 					} else {
 						brightPct = (byte) ((DeviceClass) hs.GetDeviceByRef(bundle.Brightness)).get_devValue(hs);
@@ -562,7 +557,7 @@ namespace HSPI_LIFX
 							lifxDevice.SetColor(hue, sat, status.Brightness, temperature, 0);
 
 							hs.SetDeviceString(bundle.Color, data.Color, true);
-							if (actInfo.SubTANumber == LifxControlActionData.ACTION_SET_COLOR_AND_BRIGHTNESS) {
+							if (actInfo.SubTANumber == LifxControlActionData.ActionSetColorAndBrightness) {
 								IgnoreNextDeviceControl(bundle.Brightness);
 								hs.SetDeviceValueByRef(bundle.Brightness, data.BrightnessPercent, true);
 							}
@@ -579,7 +574,7 @@ namespace HSPI_LIFX
 							}
 
 							hs.SetDeviceString(bundle.Color, data.Color, true);
-							if (actInfo.SubTANumber == LifxControlActionData.ACTION_SET_COLOR_AND_BRIGHTNESS) {
+							if (actInfo.SubTANumber == LifxControlActionData.ActionSetColorAndBrightness) {
 								IgnoreNextDeviceControl(bundle.Brightness);
 								hs.SetDeviceValueByRef(bundle.Brightness, data.BrightnessPercent, true);
 							}
@@ -588,7 +583,7 @@ namespace HSPI_LIFX
 					
 					return true;
 				
-				case LifxControlActionData.ACTION_RECALL_MZ_THEME:
+				case LifxControlActionData.ActionRecallMzTheme:
 					rootRef = data.DevRef;
 					device = (DeviceClass) hs.GetDeviceByRef(rootRef);
 					extraData = device.get_PlugExtraData_Get(hs);
@@ -598,7 +593,7 @@ namespace HSPI_LIFX
 						return false;
 					}
 					
-					transitionTime = TRANSITION_TIME;
+					transitionTime = TransitionTime;
 					try {
 						object tempObj = extraData.GetNamed("TransitionRateMs");
 						if (tempObj != null) {
@@ -607,18 +602,18 @@ namespace HSPI_LIFX
 					}
 					catch (Exception) {}
 
-					if (data.HasFlag(LifxControlActionData.FLAG_OVERRIDE_TRANSITION_TIME)) {
+					if (data.HasFlag(LifxControlActionData.FlagOverrideTransitionTime)) {
 						transitionTime = data.TransitionTimeMilliseconds;
 					}
 
 					MultiZoneTheme theme = themes[data.Color];
 					string[] addressParts = device.get_Address(hs).Split('-');
-					lifxDevice = lifxClient.GetDeviceByAddress(hs3AddressToLifxAddress(addressParts[0]));
+					lifxDevice = _lifxClient.GetDeviceByAddress(_hs3AddressToLifxAddress(addressParts[0]));
 					lifxDevice.SetPowered(true, transitionTime);
 					lifxDevice.SetExtendedColorZones(transitionTime, theme.State.Index, theme.State.Colors);
 					return true;
 
-				case LifxControlActionData.ACTION_SET_TRANSITION_TIME:
+				case LifxControlActionData.ActionSetTransitionTime:
 					rootRef = data.DevRef;
 					device = (DeviceClass) hs.GetDeviceByRef(rootRef);
 					extraData = device.get_PlugExtraData_Get(hs);
@@ -662,7 +657,7 @@ namespace HSPI_LIFX
 			
 			// Transition rate
 			tempObj = extraData.GetNamed("TransitionRateMs");
-			uint transitionTimeMs = TRANSITION_TIME;
+			uint transitionTimeMs = TransitionTime;
 			if (tempObj != null) {
 				transitionTimeMs = (uint) tempObj;
 			}
@@ -787,18 +782,18 @@ namespace HSPI_LIFX
 			}
 
 			device.set_PlugExtraData_Set(hs, extraData);
-			DeviceDescriptor descriptor = findDeviceDescriptorByRef(devRef);
-			bool shouldPollDevice = checkShouldPollDevice(descriptor, extraData);
-			if (shouldPollDevice && !devicesToPoll.Contains(descriptor)) {
-				devicesToPoll.Add(descriptor);
-			} else if (!shouldPollDevice && devicesToPoll.Contains(descriptor)) {
-				devicesToPoll.Remove(descriptor);
+			DeviceDescriptor descriptor = _findDeviceDescriptorByRef(devRef);
+			bool shouldPollDevice = _checkShouldPollDevice(descriptor, extraData);
+			if (shouldPollDevice && !_devicesToPoll.Contains(descriptor)) {
+				_devicesToPoll.Add(descriptor);
+			} else if (!shouldPollDevice && _devicesToPoll.Contains(descriptor)) {
+				_devicesToPoll.Remove(descriptor);
 			}
 
 			if ((val = postData.Get("LifxSaveMZName")) != null && val != "") {
 				Program.WriteLog("info", $"Saving multizone theme {val}");
 				string[] addressParts = device.get_Address(hs).Split('-');
-				Device lifxDevice = lifxClient.GetDeviceByAddress(hs3AddressToLifxAddress(addressParts[0]));
+				Device lifxDevice = _lifxClient.GetDeviceByAddress(_hs3AddressToLifxAddress(addressParts[0]));
 				if (lifxDevice == null) {
 					Program.WriteLog("error", $"No known LIFX device for ref {devRef} trying to save MZ");
 					return Enums.ConfigDevicePostReturn.DoneAndCancelAndStay;
@@ -849,8 +844,8 @@ namespace HSPI_LIFX
 			return output;
 		}
 
-		private void processDiscoveredDevice(Device lifxDevice) {
-			string hs3Addr = lifxAddressToHs3Address(lifxDevice.Address);
+		private void _processDiscoveredDevice(Device lifxDevice) {
+			string hs3Addr = _lifxAddressToHs3Address(lifxDevice.Address);
 			Program.WriteLog("info", "Discovered LIFX device " + hs3Addr + " at " + lifxDevice.IPAddress);
 			
 			// Do we already have an HS3 device for this?
@@ -865,11 +860,11 @@ namespace HSPI_LIFX
 			} else {
 				Program.WriteLog("info", "Creating HS3 devices for LIFX device " + hs3Addr + " (" + lifxDevice.LastKnownStatus.Label + ")");
 				bundle.CreateDevices(lifxDevice.LastKnownStatus.Label);
-				updateKnownDeviceCache();
+				_updateKnownDeviceCache();
 			}
 		}
 		
-		private string lifxAddressToHs3Address(ulong lifxAddress) {
+		private static string _lifxAddressToHs3Address(ulong lifxAddress) {
 			string addressHex = lifxAddress.ToString("X12");
 			StringBuilder builder = new StringBuilder();
 
@@ -880,7 +875,7 @@ namespace HSPI_LIFX
 			return builder.ToString().ToUpper();
 		}
 
-		private ulong hs3AddressToLifxAddress(string hs3Address) {
+		private static ulong _hs3AddressToLifxAddress(string hs3Address) {
 			StringBuilder builder = new StringBuilder();
 			for (int i = 5; i >= 0; i--) {
 				builder.Append(hs3Address.Substring(i * 2, 2));
@@ -889,7 +884,7 @@ namespace HSPI_LIFX
 			return ulong.Parse(builder.ToString(), NumberStyles.HexNumber);
 		}
 
-		private void updateKnownDeviceCache() {
+		private void _updateKnownDeviceCache() {
 			List<DeviceDescriptor> devices = new List<DeviceDescriptor>();
 
 			clsDeviceEnumeration enumerator = (clsDeviceEnumeration) hs.GetDeviceEnumerator();
@@ -911,20 +906,14 @@ namespace HSPI_LIFX
 				}
 			} while (!enumerator.Finished);
 
-			knownDeviceCache = devices.OrderBy(d => d.DevName).ToList();
-		}
-		
-		public DeviceDescriptor findDeviceDescriptorByRef(int devRef) {
-			foreach (DeviceDescriptor device in knownDeviceCache) {
-				if (device.DevRef == devRef) {
-					return device;
-				}
-			}
-
-			return null;
+			_knownDeviceCache = devices.OrderBy(d => d.DevName).ToList();
 		}
 
-		private bool checkShouldPollDevice(DeviceDescriptor device, PlugExtraData.clsPlugExtraData extraData = null) {
+		private DeviceDescriptor _findDeviceDescriptorByRef(int devRef) {
+			return _knownDeviceCache.FirstOrDefault(device => device.DevRef == devRef);
+		}
+
+		private bool _checkShouldPollDevice(DeviceDescriptor device, PlugExtraData.clsPlugExtraData extraData = null) {
 			try {
 				if (extraData == null) {
 					extraData = ((DeviceClass) hs.GetDeviceByRef(device.DevRef)).get_PlugExtraData_Get(hs);
@@ -948,9 +937,9 @@ namespace HSPI_LIFX
 			}
 		}
 
-		private void pollDevices() {
-			foreach (DeviceDescriptor descriptor in devicesToPoll) {
-				Device lifxDevice = lifxClient.GetDeviceByAddress(hs3AddressToLifxAddress(descriptor.DevAddress));
+		private void _pollDevices() {
+			foreach (DeviceDescriptor descriptor in _devicesToPoll) {
+				Device lifxDevice = _lifxClient.GetDeviceByAddress(_hs3AddressToLifxAddress(descriptor.DevAddress));
 				if (lifxDevice == null) {
 					continue;
 				}
@@ -1018,7 +1007,7 @@ namespace HSPI_LIFX
 							Program.WriteLog("console", "Brightness in HS3 for device " + bundle.Root + " matches: " + actualBright + " vs " + hsBright);
 						}
 
-						string actualColor = ColorConvert.hsvToRgb(hsv).ToString().ToLower();
+						string actualColor = ColorConvert.HsvToRgb(hsv).ToString().ToLower();
 						string hsColor = devColor.get_devString(hs).ToLower();
 						if (actualColor != hsColor) {
 							Program.WriteLog("info",
@@ -1045,20 +1034,20 @@ namespace HSPI_LIFX
 		}
 		
 		public void IgnoreNextDeviceControl(int devRef) {
-			if (ignoreControls.ContainsKey(devRef)) {
+			if (_ignoreControls.ContainsKey(devRef)) {
 				return;
 			}
 
 			Timer timer = new Timer(1000);
 			timer.AutoReset = false;
 			timer.Elapsed += (object src, ElapsedEventArgs args) => {
-				if (ignoreControls.ContainsKey(devRef)) {
-					ignoreControls.Remove(devRef);
+				if (_ignoreControls.ContainsKey(devRef)) {
+					_ignoreControls.Remove(devRef);
 				}
 			};
 			timer.Start();
 
-			ignoreControls.Add(devRef, timer);
+			_ignoreControls.Add(devRef, timer);
 		}
 	}
 

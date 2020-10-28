@@ -5,13 +5,13 @@ namespace HSPI_LIFX
 {
 	public class LifxControlActionData
 	{
-		public const uint FLAG_OVERRIDE_TRANSITION_TIME = 1 << 0;
+		public const uint FlagOverrideTransitionTime = 1 << 0;
 		
-		public const int ACTION_UNSELECTED = 0;
-		public const int ACTION_SET_COLOR = 1;
-		public const int ACTION_SET_COLOR_AND_BRIGHTNESS = 2;
-		public const int ACTION_RECALL_MZ_THEME = 3;
-		public const int ACTION_SET_TRANSITION_TIME = 10;
+		public const int ActionUnselected = 0;
+		public const int ActionSetColor = 1;
+		public const int ActionSetColorAndBrightness = 2;
+		public const int ActionRecallMzTheme = 3;
+		public const int ActionSetTransitionTime = 10;
 		
 		public uint Flags { get; set; }
 		public int DevRef { get; set; }

@@ -5,7 +5,7 @@ namespace HSPI_LIFX
 {
 	public class ColorConvert
 	{
-		public static RGB stringToRgb(string input) {
+		public static RGB StringToRgb(string input) {
 			return new RGB {
 				Red = byte.Parse(input.Substring(0, 2), NumberStyles.HexNumber),
 				Green = byte.Parse(input.Substring(2, 2), NumberStyles.HexNumber),
@@ -13,7 +13,7 @@ namespace HSPI_LIFX
 			};
 		}
 		
-		public static HSV rgbToHsv(RGB input) {
+		public static HSV RgbToHsv(RGB input) {
 			double r = input.Red / 255.0;
 			double g = input.Green / 255.0;
 			double b = input.Blue / 255.0;
@@ -22,10 +22,9 @@ namespace HSPI_LIFX
 			double max = Math.Max(Math.Max(r, g), b);
 			double deltaMax = max - min;
 
-			HSV output = new HSV();
-			output.Value = max;
+			HSV output = new HSV {Value = max};
 
-			if (doubleEquals(deltaMax, 0)) {
+			if (_doubleEquals(deltaMax, 0)) {
 				// Gray (which is white)
 				output.Hue = 0;
 				output.Saturation = 0;
@@ -36,11 +35,11 @@ namespace HSPI_LIFX
 				double deltaG = ((max - g) / 6 + deltaMax / 2) / deltaMax;
 				double deltaB = ((max - b) / 6 + deltaMax / 2) / deltaMax;
 
-				if (doubleEquals(r, max)) {
+				if (_doubleEquals(r, max)) {
 					output.Hue = deltaB - deltaG;
-				} else if (doubleEquals(g, max)) {
+				} else if (_doubleEquals(g, max)) {
 					output.Hue = (1.0 / 3.0) + deltaR - deltaB;
-				} else if (doubleEquals(b, max)) {
+				} else if (_doubleEquals(b, max)) {
 					output.Hue = (2.0 / 3.0) + deltaG - deltaR;
 				}
 
@@ -64,14 +63,14 @@ namespace HSPI_LIFX
 		/// </summary>
 		/// <param name="input"></param>
 		/// <returns></returns>
-		public static RGB hsvToRgb(HSV input) {
-			if (doubleEquals(input.Saturation, 0.0)) {
+		public static RGB HsvToRgb(HSV input) {
+			if (_doubleEquals(input.Saturation, 0.0)) {
 				return new RGB {Red = 255, Green = 255, Blue = 255};
 			}
 			
 			RGB output = new RGB();
 			double h = input.Hue * 6.0;
-			if (doubleEquals(h, 6)) {
+			if (_doubleEquals(h, 6)) {
 				h = 0;
 			}
 
@@ -121,11 +120,12 @@ namespace HSPI_LIFX
 			return output;
 		}
 
-		private static bool doubleEquals(double a, double b) {
+		private static bool _doubleEquals(double a, double b) {
 			return Math.Abs(a - b) < 0.0000001;
 		}
 	}
 
+	// ReSharper disable once InconsistentNaming
 	public class RGB
 	{
 		public byte Red { get; set; }
@@ -137,6 +137,7 @@ namespace HSPI_LIFX
 		}
 	}
 
+	// ReSharper disable once InconsistentNaming
 	public class HSV
 	{
 		public double Hue { get; set; }
