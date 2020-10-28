@@ -111,7 +111,7 @@ namespace LifxClient
 			Task.Run(async () => {
 				await Task.Delay(2000);
 				foreach (Device dev in allDevices) {
-					Debug.WriteLine($"Device {dev.Address} checked in: {dev.CheckedIn}; missed checkins: {dev.MissedCheckins}");
+					Debug.WriteLine($"Device {dev.Address:X} checked in: {dev.CheckedIn}; missed checkins: {dev.MissedCheckins}");
 					if (!dev.CheckedIn && ++dev.MissedCheckins >= 5) {
 						removeFailedDevice(dev);
 					}
@@ -146,9 +146,8 @@ namespace LifxClient
 			while (!responses.ContainsKey(reqId) && ++attempts < 50) {
 				await Task.Delay(100);				
 			}
-
-			Frame respFrame;
-			if (!responses.TryGetValue(reqId, out respFrame)) {
+			
+			if (!responses.TryGetValue(reqId, out Frame respFrame)) {
 				throw new Exception("Timed out waiting for response");
 			}
 
@@ -205,11 +204,10 @@ namespace LifxClient
 				case MessageType.StateService:
 					var service = reader.ReadByte();
 					var port = reader.ReadUInt32();
-					Debug.WriteLine("Got service " + service + " on port " + port + " from " + remote + " address " + frame.Target.ToString("X"));
+					Debug.WriteLine($"Got service {service} on port {port} from {remote} address {frame.Target:X}");
 					if (service == 1) {
 						// UDP
-						Device device;
-						if (devices.TryGetValue(frame.Target, out device)) {
+						if (devices.TryGetValue(frame.Target, out Device device)) {
 							//Debug.WriteLine("Address " + frame.Target.ToString("X") + " is already known; not querying");
 							device.CheckedIn = true;
 							device.MissedCheckins = 0;

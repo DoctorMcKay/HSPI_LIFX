@@ -26,7 +26,7 @@ namespace HSPI_LIFX
 		private Timer pollTimer;
 		
 		private const uint TRANSITION_TIME = 1000;
-		private const ushort DISCOVERY_FREQUENCY = 10000;
+		private const ushort DISCOVERY_FREQUENCY = 30000;
 		private const ushort DEVICE_STATUS_POLL_FREQUENCY = 10000;
 		
 		public HSPI() {
